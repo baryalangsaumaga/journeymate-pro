@@ -4,6 +4,8 @@ export type WeatherCondition = "sunny" | "cloudy" | "rainy" | "stormy" | "snowy"
 export type ReportType = "trip-summary" | "expense" | "itinerary" | "analytics";
 export type ThemeMode = "light" | "dark" | "adventure" | "ocean" | "sunset";
 export type Language = "en" | "es" | "fr" | "de" | "ja" | "ko" | "zh" | "ar" | "hi" | "pt";
+export type ExpenseCategory = "food" | "transport" | "accommodation" | "activities" | "shopping" | "other";
+export type Currency = "PHP" | "USD" | "EUR" | "JPY" | "GBP" | "KRW" | "CNY" | "AUD" | "SGD" | "THB";
 
 export interface Location {
   id: string;
@@ -28,6 +30,32 @@ export interface ItineraryStop {
   isCompleted: boolean;
 }
 
+export interface Expense {
+  id: string;
+  tripId: string;
+  category: ExpenseCategory;
+  description: string;
+  amount: number;
+  currency: Currency;
+  paidBy: string; // userId
+  splitAmong: string[]; // userIds
+  date: string;
+  receipt?: string;
+}
+
+export interface TripBudget {
+  tripId: string;
+  totalBudget: number;
+  currency: Currency;
+  categories: { category: ExpenseCategory; allocated: number; spent: number }[];
+}
+
+export interface CurrencyRate {
+  from: Currency;
+  to: Currency;
+  rate: number;
+}
+
 export interface Trip {
   id: string;
   title: string;
@@ -39,6 +67,8 @@ export interface Trip {
   stops: ItineraryStop[];
   collaborators: TravelUser[];
   isOfflineAvailable: boolean;
+  expenses?: Expense[];
+  budget?: TripBudget;
 }
 
 export interface TravelUser {

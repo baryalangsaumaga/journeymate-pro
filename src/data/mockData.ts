@@ -1,11 +1,11 @@
-import { Trip, TravelUser, ChatMessage, Review, Location, RouteInfo } from "@/types/travel";
+import type { Trip, TravelUser, ChatMessage, Review, Location, RouteInfo, Expense, TripBudget, CurrencyRate } from "@/types/travel";
 
 export const currentUser: TravelUser = {
   id: "u1",
   name: "Alex Rivera",
   avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Alex",
   isOnline: true,
-  lastLocation: { lat: 14.5995, lng: 120.9842 },
+  lastLocation: { lat: 14.5895, lng: 120.9740 },
   role: "owner",
 };
 
@@ -29,6 +29,43 @@ export const mockLocations: Location[] = [
   { id: "l10", name: "Antipolo View Deck", lat: 14.6261, lng: 121.1764, type: "viewpoint", rating: 4.5, description: "Panoramic city view at sunset" },
 ];
 
+export const mockExpenses: Expense[] = [
+  { id: "e1", tripId: "t1", category: "food", description: "Lunch at Intramuros", amount: 850, currency: "PHP", paidBy: "u1", splitAmong: ["u1", "u2", "u4"], date: "2026-03-15" },
+  { id: "e2", tripId: "t1", category: "transport", description: "Grab to Poblacion", amount: 320, currency: "PHP", paidBy: "u2", splitAmong: ["u1", "u2"], date: "2026-03-15" },
+  { id: "e3", tripId: "t1", category: "activities", description: "Fort Santiago entrance", amount: 225, currency: "PHP", paidBy: "u1", splitAmong: ["u1", "u2", "u4"], date: "2026-03-15" },
+  { id: "e4", tripId: "t1", category: "food", description: "Dinner at Poblacion rooftop", amount: 4200, currency: "PHP", paidBy: "u4", splitAmong: ["u1", "u2", "u4"], date: "2026-03-16" },
+  { id: "e5", tripId: "t1", category: "accommodation", description: "Manila Hotel 2 nights", amount: 12800, currency: "PHP", paidBy: "u1", splitAmong: ["u1", "u2", "u4"], date: "2026-03-15" },
+  { id: "e6", tripId: "t1", category: "shopping", description: "Souvenirs from Intramuros", amount: 1500, currency: "PHP", paidBy: "u2", splitAmong: ["u2"], date: "2026-03-16" },
+  { id: "e7", tripId: "t1", category: "transport", description: "Toll - SLEX", amount: 385, currency: "PHP", paidBy: "u1", splitAmong: ["u1", "u2", "u4"], date: "2026-03-17" },
+  { id: "e8", tripId: "t1", category: "food", description: "Coffee at BGC cafe", amount: 580, currency: "PHP", paidBy: "u1", splitAmong: ["u1", "u4"], date: "2026-03-17" },
+];
+
+export const mockBudget: TripBudget = {
+  tripId: "t1",
+  totalBudget: 30000,
+  currency: "PHP",
+  categories: [
+    { category: "food", allocated: 8000, spent: 5630 },
+    { category: "transport", allocated: 3000, spent: 705 },
+    { category: "accommodation", allocated: 14000, spent: 12800 },
+    { category: "activities", allocated: 2000, spent: 225 },
+    { category: "shopping", allocated: 2000, spent: 1500 },
+    { category: "other", allocated: 1000, spent: 0 },
+  ],
+};
+
+export const currencyRates: CurrencyRate[] = [
+  { from: "PHP", to: "USD", rate: 0.018 },
+  { from: "PHP", to: "EUR", rate: 0.016 },
+  { from: "PHP", to: "JPY", rate: 2.68 },
+  { from: "PHP", to: "GBP", rate: 0.014 },
+  { from: "PHP", to: "KRW", rate: 24.1 },
+  { from: "PHP", to: "SGD", rate: 0.024 },
+  { from: "USD", to: "PHP", rate: 56.2 },
+  { from: "EUR", to: "PHP", rate: 62.5 },
+  { from: "JPY", to: "PHP", rate: 0.373 },
+];
+
 export const mockTrips: Trip[] = [
   {
     id: "t1",
@@ -37,9 +74,11 @@ export const mockTrips: Trip[] = [
     startDate: "2026-03-15",
     endDate: "2026-03-18",
     status: "active",
-    coverImage: "https://images.unsplash.com/photo-1518509562904-e7ef99cdcc86?w=800",
+    coverImage: "https://images.unsplash.com/photo-1518509562904-e7ef99cdcc86?w=800&q=80",
     isOfflineAvailable: true,
     collaborators: [currentUser, collaborators[0], collaborators[2]],
+    expenses: mockExpenses,
+    budget: mockBudget,
     stops: [
       { id: "s1", location: mockLocations[0], arrivalTime: "09:00", departureTime: "12:00", notes: "Fort Santiago & Manila Cathedral", transitType: "walk", weather: "sunny", temperature: 32, isCompleted: true },
       { id: "s2", location: mockLocations[1], arrivalTime: "12:30", departureTime: "14:00", notes: "Lunch at Rizal Park, visit monument", transitType: "walk", weather: "sunny", temperature: 33, isCompleted: true },
@@ -54,7 +93,7 @@ export const mockTrips: Trip[] = [
     startDate: "2026-03-20",
     endDate: "2026-03-20",
     status: "planning",
-    coverImage: "https://images.unsplash.com/photo-1580477667995-2b94f01c9516?w=800",
+    coverImage: "https://images.unsplash.com/photo-1580477667995-2b94f01c9516?w=800&q=80",
     isOfflineAvailable: false,
     collaborators: [currentUser, collaborators[1]],
     stops: [
@@ -68,7 +107,7 @@ export const mockTrips: Trip[] = [
     startDate: "2026-04-01",
     endDate: "2026-04-01",
     status: "planning",
-    coverImage: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800",
+    coverImage: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80",
     isOfflineAvailable: false,
     collaborators: [currentUser, collaborators[0], collaborators[1], collaborators[3]],
     stops: [
