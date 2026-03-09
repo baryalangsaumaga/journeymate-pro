@@ -48,7 +48,7 @@ export default function AppShell() {
       case "reviews": return <ReviewsPage />;
       case "reports": return <ReportsPage />;
       case "settings": return <SettingsPage />;
-      default: return <DashboardPage onNavigate={setActiveTab} />;
+      default: return <DashboardPage onNavigate={(tab: string) => setActiveTab(tab as TabId)} />;
     }
   };
 

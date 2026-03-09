@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import {
   FileText, Download, Printer, Database, Clock, RefreshCw,
   CheckCircle2, AlertCircle, Calendar, BarChart3, Table2,
-  FileSpreadsheet, FilePdf, Shield, HardDrive, Cloud
+  FileSpreadsheet, FileDown, Shield, HardDrive, Cloud
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
