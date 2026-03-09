@@ -40,7 +40,7 @@ export default function AppShell() {
 
   const renderPage = () => {
     switch (activeTab) {
-      case "home": return <DashboardPage onNavigate={setActiveTab} />;
+      case "home": return <DashboardPage onNavigate={(tab: string) => setActiveTab(tab as TabId)} />;
       case "itinerary": return <ItineraryPage />;
       case "navigate": return <NavigationPage />;
       case "social": return <SocialPage />;
