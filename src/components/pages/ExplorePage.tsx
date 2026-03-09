@@ -2,14 +2,17 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   Search, MapPin, Star, Hotel, UtensilsCrossed, Mountain,
-  Fuel, Eye, Landmark, Filter, SlidersHorizontal, Heart,
-  Navigation, Clock, TrendingUp, Compass
+  Fuel, Eye, Landmark, SlidersHorizontal, Heart,
+  TrendingUp, Compass
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { mockLocations } from "@/data/mockData";
+
+const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
+const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
 
 const categories = [
   { id: "all", label: "All", icon: Compass },
@@ -48,34 +51,33 @@ export default function ExplorePage() {
   };
 
   return (
-    <div className="px-4 py-4 pb-6 space-y-4">
-      {/* Header */}
-      <div>
-        <h2 className="font-display font-bold text-xl">Explore</h2>
-        <p className="text-xs text-muted-foreground">Discover nearby places & recommendations</p>
-      </div>
+    <motion.div variants={container} initial="hidden" animate="show" className="px-4 py-4 pb-6 space-y-4">
+      <motion.div variants={item}>
+        <h2 className="font-display font-bold text-xl tracking-tight">Explore</h2>
+        <p className="text-[11px] text-muted-foreground mt-0.5">Discover nearby places & recommendations</p>
+      </motion.div>
 
       {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+      <motion.div variants={item} className="relative">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           placeholder="Search places, hotels, restaurants..."
-          className="pl-9 h-10 border-0 bg-muted text-sm"
+          className="pl-10 h-11 border-0 bg-muted text-sm rounded-xl"
         />
-        <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8">
+        <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-9 w-9 rounded-xl">
           <SlidersHorizontal className="w-4 h-4" />
         </Button>
-      </div>
+      </motion.div>
 
       {/* Categories */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
+      <motion.div variants={item} className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
         {categories.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setActiveCategory(id)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all tap-highlight ${
               activeCategory === id ? "bg-primary text-primary-foreground shadow-travel" : "bg-muted text-muted-foreground"
             }`}
           >
@@ -83,63 +85,63 @@ export default function ExplorePage() {
             {label}
           </button>
         ))}
-      </div>
+      </motion.div>
 
-      {/* Hotel Recommendations */}
+      {/* Hotels */}
       {(activeCategory === "all" || activeCategory === "hotel") && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-display font-semibold text-sm flex items-center gap-1">
+        <motion.div variants={item}>
+          <div className="flex items-center justify-between mb-2.5">
+            <h3 className="section-header flex items-center gap-1.5">
               <Hotel className="w-4 h-4 text-primary" /> Hotel Recommendations
             </h3>
-            <Badge variant="outline" className="text-[10px] h-5">Near you</Badge>
+            <Badge variant="outline" className="text-[9px] h-5 font-semibold">Near you</Badge>
           </div>
-          <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4">
+          <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4">
             {hotelRecommendations.map((hotel, i) => (
-              <Card key={i} className="border-0 shadow-card min-w-[180px] flex-shrink-0">
-                <CardContent className="p-3">
+              <Card key={i} className="border-0 card-interactive min-w-[170px] flex-shrink-0">
+                <CardContent className="p-3.5">
                   <div className="flex items-start justify-between">
                     <span className="text-2xl">{hotel.image}</span>
-                    <Badge className="text-[9px] h-4 bg-accent text-accent-foreground">{hotel.type}</Badge>
+                    <Badge className="text-[8px] h-[16px] bg-accent/10 text-accent font-semibold">{hotel.type}</Badge>
                   </div>
-                  <h4 className="font-medium text-sm mt-2">{hotel.name}</h4>
+                  <h4 className="font-semibold text-[13px] mt-2">{hotel.name}</h4>
                   <div className="flex items-center gap-1 mt-1">
                     <Star className="w-3 h-3 text-accent fill-accent" />
-                    <span className="text-xs">{hotel.rating}</span>
+                    <span className="text-[11px] font-medium">{hotel.rating}</span>
                     <span className="text-[10px] text-muted-foreground ml-1">{hotel.distance}</span>
                   </div>
-                  <p className="text-xs font-semibold text-primary mt-1">{hotel.price}</p>
+                  <p className="text-xs font-bold text-primary mt-1.5">{hotel.price}</p>
                 </CardContent>
               </Card>
             ))}
           </div>
-        </div>
+        </motion.div>
       )}
 
-      {/* Food Recommendations */}
+      {/* Food */}
       {(activeCategory === "all" || activeCategory === "restaurant") && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-display font-semibold text-sm flex items-center gap-1">
+        <motion.div variants={item}>
+          <div className="flex items-center justify-between mb-2.5">
+            <h3 className="section-header flex items-center gap-1.5">
               <UtensilsCrossed className="w-4 h-4 text-accent" /> Food & Dining
             </h3>
-            <Badge variant="outline" className="text-[10px] h-5">
+            <Badge variant="outline" className="text-[9px] h-5 font-semibold">
               <TrendingUp className="w-2.5 h-2.5 mr-0.5" /> Trending
             </Badge>
           </div>
           <div className="space-y-2">
             {foodRecommendations.map((food, i) => (
-              <Card key={i} className="border-0 shadow-card">
-                <CardContent className="p-3 flex items-center gap-3">
+              <Card key={i} className="border-0 card-interactive">
+                <CardContent className="p-3.5 flex items-center gap-3">
                   <span className="text-2xl">{food.image}</span>
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-sm truncate">{food.name}</h4>
+                    <h4 className="font-semibold text-[13px] truncate">{food.name}</h4>
                     <p className="text-[10px] text-muted-foreground">{food.cuisine} · {food.price}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <div className="flex items-center gap-0.5">
                       <Star className="w-3 h-3 text-accent fill-accent" />
-                      <span className="text-xs font-medium">{food.rating}</span>
+                      <span className="text-[11px] font-bold">{food.rating}</span>
                     </div>
                     <p className="text-[10px] text-muted-foreground">{food.distance}</p>
                   </div>
@@ -147,42 +149,42 @@ export default function ExplorePage() {
               </Card>
             ))}
           </div>
-        </div>
+        </motion.div>
       )}
 
-      {/* Nearby Locations */}
-      <div>
-        <h3 className="font-display font-semibold text-sm mb-2">
+      {/* All Locations */}
+      <motion.div variants={item}>
+        <h3 className="section-header mb-2.5">
           {activeCategory === "all" ? "All Nearby" : categories.find(c => c.id === activeCategory)?.label}
         </h3>
         <div className="space-y-2">
           {filteredLocations.map(loc => (
-            <Card key={loc.id} className="border-0 shadow-card">
-              <CardContent className="p-3 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-brand-muted flex items-center justify-center flex-shrink-0">
+            <Card key={loc.id} className="border-0 card-interactive">
+              <CardContent className="p-3.5 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/8 flex items-center justify-center flex-shrink-0">
                   <MapPin className="w-5 h-5 text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h4 className="font-medium text-sm truncate">{loc.name}</h4>
+                  <h4 className="font-semibold text-[13px] truncate">{loc.name}</h4>
                   <p className="text-[10px] text-muted-foreground truncate">{loc.description}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <div className="flex items-center gap-0.5">
                     <Star className="w-3 h-3 text-accent fill-accent" />
-                    <span className="text-xs">{loc.rating}</span>
+                    <span className="text-[11px] font-medium">{loc.rating}</span>
                   </div>
                   <Button
-                    variant="ghost" size="icon" className="h-7 w-7"
+                    variant="ghost" size="icon" className="h-8 w-8 rounded-xl"
                     onClick={() => toggleFavorite(loc.id)}
                   >
-                    <Heart className={`w-3.5 h-3.5 ${favorites.includes(loc.id) ? "fill-destructive text-destructive" : ""}`} />
+                    <Heart className={`w-4 h-4 transition-colors ${favorites.includes(loc.id) ? "fill-destructive text-destructive" : ""}`} />
                   </Button>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
