@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   Star, ThumbsUp, MapPin, TrendingUp, Award, MessageSquare,
@@ -9,12 +9,48 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { MapContainer, TileLayer, Circle } from "react-leaflet";
+import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { mockReviews, heatmapData } from "@/data/mockData";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
+
+function HeatmapMap() {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<L.Map | null>(null);
+
+  useEffect(() => {
+    if (!mapRef.current || mapInstance.current) return;
+
+    const map = L.map(mapRef.current, {
+      center: [13.5, 121.0],
+      zoom: 7,
+      zoomControl: false,
+      attributionControl: false,
+    });
+
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png").addTo(map);
+
+    heatmapData.forEach(point => {
+      L.circle([point.lat, point.lng], {
+        radius: point.intensity * 25000,
+        color: "transparent",
+        fillColor: `hsl(162, 72%, ${30 + point.intensity * 30}%)`,
+        fillOpacity: 0.4 + point.intensity * 0.3,
+      }).addTo(map);
+    });
+
+    mapInstance.current = map;
+
+    return () => {
+      map.remove();
+      mapInstance.current = null;
+    };
+  }, []);
+
+  return <div ref={mapRef} className="h-72 w-full" />;
+}
 
 export default function ReviewsPage() {
   return (
@@ -37,46 +73,21 @@ export default function ReviewsPage() {
         </TabsList>
 
         <TabsContent value="heatmap" className="space-y-4 mt-3">
-          {/* Real Map Heatmap */}
           <motion.div variants={item}>
             <Card className="border-0 card-elevated overflow-hidden">
-              <CardContent className="p-0">
-                <div className="h-72 relative">
-                  <MapContainer
-                    center={[13.5, 121.0]}
-                    zoom={7}
-                    style={{ height: "100%", width: "100%" }}
-                    zoomControl={false}
-                    attributionControl={false}
-                  >
-                    <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-                    {heatmapData.map((point, i) => (
-                      <Circle
-                        key={i}
-                        center={[point.lat, point.lng]}
-                        radius={point.intensity * 25000}
-                        pathOptions={{
-                          color: "transparent",
-                          fillColor: `hsl(162, 72%, ${30 + point.intensity * 30}%)`,
-                          fillOpacity: 0.4 + point.intensity * 0.3,
-                        }}
-                      />
-                    ))}
-                  </MapContainer>
-                  {/* Legend */}
-                  <div className="absolute bottom-3 right-3 glass-ultra rounded-xl px-3 py-2 z-[400]">
-                    <div className="flex items-center gap-3 text-[9px] font-medium">
-                      <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-primary/30" /> Low</div>
-                      <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-primary/60" /> Med</div>
-                      <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-primary" /> High</div>
-                    </div>
+              <CardContent className="p-0 relative">
+                <HeatmapMap />
+                <div className="absolute bottom-3 right-3 glass-ultra rounded-xl px-3 py-2 z-[400]">
+                  <div className="flex items-center gap-3 text-[9px] font-medium">
+                    <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-primary/30" /> Low</div>
+                    <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-primary/60" /> Med</div>
+                    <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-primary" /> High</div>
                   </div>
                 </div>
               </CardContent>
             </Card>
           </motion.div>
 
-          {/* Stats */}
           <motion.div variants={item} className="grid grid-cols-3 gap-2">
             {[
               { label: "Places Visited", value: "10", icon: MapPin },
@@ -93,7 +104,6 @@ export default function ReviewsPage() {
             ))}
           </motion.div>
 
-          {/* Most Visited */}
           <motion.div variants={item}>
             <h3 className="section-header mb-3 flex items-center gap-1.5">
               <Flame className="w-4 h-4 text-accent" /> Most Visited
