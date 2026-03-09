@@ -146,7 +146,7 @@ export default function ReportsPage() {
             ].map((file, i) => (
               <Card key={i} className="border-0 shadow-card">
                 <CardContent className="p-3 flex items-center gap-3">
-                  <FilePdf className="w-5 h-5 text-destructive flex-shrink-0" />
+                  <FileDown className="w-5 h-5 text-destructive flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium truncate">{file.name}</p>
                     <p className="text-[10px] text-muted-foreground">{file.date} · {file.size}</p>
