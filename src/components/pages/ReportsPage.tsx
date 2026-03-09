@@ -107,7 +107,7 @@ export default function ReportsPage() {
                           {fmt === "Print" ? (
                             <Printer className="w-3 h-3" />
                           ) : fmt === "PDF" ? (
-                            <FilePdf className="w-3 h-3" />
+                            <FileDown className="w-3 h-3" />
                           ) : (
                             <FileSpreadsheet className="w-3 h-3" />
                           )}
