@@ -2,7 +2,8 @@ import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Map, Compass, Users, Star, FileText, Settings, Home, Navigation,
-  Search, Bell, User, Menu, X, Wifi, WifiOff, Download, DollarSign
+  Search, Bell, User, Menu, X, Wifi, WifiOff, Download, DollarSign,
+  Sparkles, Heart
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +16,13 @@ import ReviewsPage from "@/components/pages/ReviewsPage";
 import ReportsPage from "@/components/pages/ReportsPage";
 import SettingsPage from "@/components/pages/SettingsPage";
 import ExpensesPage from "@/components/pages/ExpensesPage";
+import NotificationDrawer, { mockNotifications } from "@/components/NotificationDrawer";
+import PullToRefresh from "@/components/PullToRefresh";
+import {
+  DashboardSkeleton, ItinerarySkeleton, ExploreSkeleton,
+  ExpensesSkeleton, SocialSkeleton, ReviewsSkeleton,
+  MapSkeleton, SettingsSkeleton, ReportsSkeleton
+} from "@/components/SkeletonLoaders";
 
 const tabs = [
   { id: "home", label: "Home", icon: Home },
@@ -33,15 +41,44 @@ const menuItems = [
 
 type TabId = typeof tabs[number]["id"] | "reviews" | "reports" | "settings" | "expenses";
 
+const skeletonMap: Record<string, React.FC> = {
+  home: DashboardSkeleton,
+  itinerary: ItinerarySkeleton,
+  navigate: MapSkeleton,
+  social: SocialSkeleton,
+  explore: ExploreSkeleton,
+  expenses: ExpensesSkeleton,
+  reviews: ReviewsSkeleton,
+  reports: ReportsSkeleton,
+  settings: SettingsSkeleton,
+};
+
 export default function AppShell() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [isOffline] = useState(false);
-  const [notifications] = useState(3);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const navigate = useCallback((tab: string) => setActiveTab(tab as TabId), []);
+  const unreadCount = mockNotifications.filter(n => !n.read).length;
+
+  const navigate = useCallback((tab: string) => {
+    setIsLoading(true);
+    setActiveTab(tab as TabId);
+    // Simulate loading for native feel
+    setTimeout(() => setIsLoading(false), 600);
+  }, []);
+
+  const handleRefresh = useCallback(async () => {
+    // Simulate refresh
+    await new Promise(resolve => setTimeout(resolve, 1200));
+  }, []);
 
   const renderPage = () => {
+    if (isLoading) {
+      const Skeleton = skeletonMap[activeTab] || DashboardSkeleton;
+      return <Skeleton />;
+    }
     switch (activeTab) {
       case "home": return <DashboardPage onNavigate={navigate} />;
       case "itinerary": return <ItineraryPage />;
@@ -55,6 +92,9 @@ export default function AppShell() {
       default: return <DashboardPage onNavigate={navigate} />;
     }
   };
+
+  // Map page doesn't use pull-to-refresh (it has its own gestures)
+  const usePullToRefresh = activeTab !== "navigate";
 
   return (
     <div className="flex flex-col h-[100dvh] bg-background overflow-hidden">
@@ -77,12 +117,16 @@ export default function AppShell() {
             {isOffline ? <WifiOff className="w-2.5 h-2.5" /> : <Wifi className="w-2.5 h-2.5" />}
             {isOffline ? "Offline" : "Live"}
           </Badge>
-          <Button variant="ghost" size="icon" className="h-9 w-9 relative rounded-xl" onClick={() => {}}>
+          <Button variant="ghost" size="icon" className="h-9 w-9 relative rounded-xl" onClick={() => setNotifOpen(true)}>
             <Bell className="w-[18px] h-[18px]" />
-            {notifications > 0 && (
-              <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] flex items-center justify-center font-bold ring-2 ring-card">
-                {notifications}
-              </span>
+            {unreadCount > 0 && (
+              <motion.span
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute top-1 right-1 w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] flex items-center justify-center font-bold ring-2 ring-card"
+              >
+                {unreadCount}
+              </motion.span>
             )}
           </Button>
           <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl" onClick={() => setMenuOpen(true)}>
@@ -92,19 +136,36 @@ export default function AppShell() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-none">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.15, ease: [0.25, 0.1, 0.25, 1] }}
-            className="min-h-full"
-          >
-            {renderPage()}
-          </motion.div>
-        </AnimatePresence>
+      <main className="flex-1 overflow-hidden">
+        {usePullToRefresh ? (
+          <PullToRefresh onRefresh={handleRefresh} className="h-full">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab + (isLoading ? "-loading" : "")}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15, ease: [0.25, 0.1, 0.25, 1] }}
+                className="min-h-full"
+              >
+                {renderPage()}
+              </motion.div>
+            </AnimatePresence>
+          </PullToRefresh>
+        ) : (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab + (isLoading ? "-loading" : "")}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.15, ease: [0.25, 0.1, 0.25, 1] }}
+              className="h-full"
+            >
+              {renderPage()}
+            </motion.div>
+          </AnimatePresence>
+        )}
       </main>
 
       {/* Bottom Navigation */}
@@ -115,7 +176,7 @@ export default function AppShell() {
             return (
               <button
                 key={id}
-                onClick={() => setActiveTab(id)}
+                onClick={() => navigate(id)}
                 className="flex flex-col items-center gap-0.5 py-1 px-3.5 rounded-2xl transition-all relative tap-highlight min-w-[56px]"
               >
                 {isActive && (
@@ -171,12 +232,43 @@ export default function AppShell() {
                     <p className="text-[10px] text-muted-foreground">Explorer Level 12 ✨</p>
                   </div>
                 </div>
+                {/* XP Progress */}
+                <div className="mt-3 space-y-1">
+                  <div className="flex items-center justify-between text-[9px]">
+                    <span className="text-muted-foreground font-medium">Next: Level 13</span>
+                    <span className="font-semibold text-primary">2,450 / 3,000 XP</span>
+                  </div>
+                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                    <motion.div
+                      className="h-full bg-gradient-to-r from-primary to-accent rounded-full"
+                      initial={{ width: 0 }}
+                      animate={{ width: "82%" }}
+                      transition={{ delay: 0.3, duration: 0.8, ease: "easeOut" }}
+                    />
+                  </div>
+                </div>
               </div>
+
+              {/* Stats Row */}
+              <div className="mx-4 mb-4 grid grid-cols-3 gap-2">
+                {[
+                  { label: "Trips", value: "7", icon: Compass },
+                  { label: "Reviews", value: "4", icon: Star },
+                  { label: "Saved", value: "12", icon: Heart },
+                ].map(({ label, value, icon: Icon }) => (
+                  <div key={label} className="text-center p-2.5 rounded-xl bg-muted">
+                    <Icon className="w-3.5 h-3.5 mx-auto mb-1 text-muted-foreground" />
+                    <p className="font-display font-bold text-sm leading-none">{value}</p>
+                    <p className="text-[8px] text-muted-foreground font-medium mt-0.5">{label}</p>
+                  </div>
+                ))}
+              </div>
+
               <div className="flex-1 px-2 space-y-0.5">
                 {menuItems.map(({ id, label, icon: Icon, badge }) => (
                   <button
                     key={id}
-                    onClick={() => { setActiveTab(id as TabId); setMenuOpen(false); }}
+                    onClick={() => { navigate(id); setMenuOpen(false); }}
                     className={`flex items-center gap-3 w-full px-3 py-3 rounded-xl text-sm font-medium transition-all tap-highlight ${
                       activeTab === id ? "text-primary bg-primary/8" : "text-foreground hover:bg-muted"
                     }`}
@@ -189,16 +281,27 @@ export default function AppShell() {
                   </button>
                 ))}
               </div>
-              <div className="p-4 m-4 mt-0 rounded-2xl bg-muted/50">
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Offline data: 24MB cached</span>
+              <div className="p-4 space-y-2">
+                <div className="p-3 rounded-2xl bg-muted/50">
+                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Offline data: 24MB cached</span>
+                  </div>
+                </div>
+                <div className="p-3 rounded-2xl bg-gradient-to-r from-primary/5 to-accent/5 border border-primary/10">
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <Sparkles className="w-3.5 h-3.5 text-primary" />
+                    <span className="font-medium">TrailSync Pro — Upgrade</span>
+                  </div>
                 </div>
               </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
+
+      {/* Notification Drawer */}
+      <NotificationDrawer open={notifOpen} onClose={() => setNotifOpen(false)} />
     </div>
   );
 }
