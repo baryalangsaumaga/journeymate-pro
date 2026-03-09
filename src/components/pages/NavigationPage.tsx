@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Navigation, MapPin, Car, Bus, Footprints, Train, Bike,
@@ -10,7 +10,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, Circle } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { mockRouteInfo, mockLocations } from "@/data/mockData";
@@ -31,12 +30,12 @@ const createIcon = (color: string, size: number = 12) => L.divIcon({
 });
 
 const routeCoords: [number, number][] = [
-  [14.5895, 120.9740], // Intramuros
-  [14.5833, 120.9667], // Rizal Park
-  [14.5647, 121.0300], // Poblacion
-  [14.5547, 121.0509], // BGC
-  [14.4200, 121.0400], // SLEX
-  [14.1153, 120.9621], // Tagaytay
+  [14.5895, 120.9740],
+  [14.5833, 120.9667],
+  [14.5647, 121.0300],
+  [14.5547, 121.0509],
+  [14.4200, 121.0400],
+  [14.1153, 120.9621],
 ];
 
 const transitModes = [
@@ -46,79 +45,101 @@ const transitModes = [
   { id: "bike", icon: Bike, label: "Bike", eta: "4h 15m" },
 ];
 
-function MapUpdater({ center }: { center: [number, number] }) {
-  const map = useMap();
-  map.setView(center, map.getZoom());
-  return null;
-}
-
 export default function NavigationPage() {
   const [selectedMode, setSelectedMode] = useState("car");
   const [isNavigating, setIsNavigating] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [searchFocused, setSearchFocused] = useState(false);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<L.Map | null>(null);
+  const polylineRef = useRef<L.Polyline | null>(null);
+  const circleRef = useRef<L.Circle | null>(null);
 
   const center: [number, number] = [14.45, 120.98];
+
+  useEffect(() => {
+    if (!mapRef.current || mapInstance.current) return;
+    
+    const map = L.map(mapRef.current, {
+      center,
+      zoom: 11,
+      zoomControl: false,
+      attributionControl: false,
+    });
+
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png").addTo(map);
+
+    // Route line
+    polylineRef.current = L.polyline(routeCoords, {
+      color: "hsl(162, 72%, 40%)",
+      weight: 4,
+      opacity: 0.9,
+      dashArray: "8 6",
+    }).addTo(map);
+
+    // Start marker
+    L.marker(routeCoords[0], { icon: createIcon("#22c55e", 16) })
+      .bindPopup("<strong>Start:</strong> Intramuros, Manila")
+      .addTo(map);
+
+    // End marker
+    L.marker(routeCoords[routeCoords.length - 1], { icon: createIcon("#ef4444", 16) })
+      .bindPopup("<strong>Destination:</strong> Tagaytay Ridge")
+      .addTo(map);
+
+    // Gas Stations
+    mockLocations.filter(l => l.type === "gas-station").forEach(loc => {
+      L.marker([loc.lat, loc.lng], { icon: createIcon("#0ea5e9", 10) })
+        .bindPopup(`<strong>⛽ ${loc.name}</strong><br/>${loc.description}`)
+        .addTo(map);
+    });
+
+    // Viewpoints
+    mockLocations.filter(l => l.type === "viewpoint").forEach(loc => {
+      L.marker([loc.lat, loc.lng], { icon: createIcon("#f59e0b", 10) })
+        .bindPopup(`<strong>👁️ ${loc.name}</strong><br/>${loc.description}<br/>⭐ ${loc.rating}`)
+        .addTo(map);
+    });
+
+    mapInstance.current = map;
+
+    return () => {
+      map.remove();
+      mapInstance.current = null;
+    };
+  }, []);
+
+  // Update polyline dash and circle when navigating changes
+  useEffect(() => {
+    if (!mapInstance.current) return;
+
+    if (polylineRef.current) {
+      polylineRef.current.setStyle({ dashArray: isNavigating ? undefined : "8 6" });
+    }
+
+    if (isNavigating) {
+      if (!circleRef.current) {
+        circleRef.current = L.circle(routeCoords[1], {
+          radius: 200,
+          color: "hsl(162, 72%, 40%)",
+          fillColor: "hsl(162, 72%, 40%)",
+          fillOpacity: 0.2,
+          weight: 2,
+        }).addTo(mapInstance.current);
+      }
+    } else {
+      if (circleRef.current) {
+        circleRef.current.remove();
+        circleRef.current = null;
+      }
+    }
+  }, [isNavigating]);
 
   return (
     <div className="relative h-[calc(100dvh-7rem)]">
       {/* Real Map */}
-      <div className="absolute inset-0 z-0">
-        <MapContainer
-          center={center}
-          zoom={11}
-          style={{ height: "100%", width: "100%" }}
-          zoomControl={false}
-          attributionControl={false}
-        >
-          <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
-
-          {/* Route line */}
-          <Polyline
-            positions={routeCoords}
-            pathOptions={{
-              color: "hsl(162, 72%, 40%)",
-              weight: 4,
-              opacity: 0.9,
-              dashArray: isNavigating ? undefined : "8 6",
-            }}
-          />
-
-          {/* Start */}
-          <Marker position={routeCoords[0]} icon={createIcon("#22c55e", 16)}>
-            <Popup><strong>Start:</strong> Intramuros, Manila</Popup>
-          </Marker>
-
-          {/* End */}
-          <Marker position={routeCoords[routeCoords.length - 1]} icon={createIcon("#ef4444", 16)}>
-            <Popup><strong>Destination:</strong> Tagaytay Ridge</Popup>
-          </Marker>
-
-          {/* Gas Stations */}
-          {mockLocations.filter(l => l.type === "gas-station").map(loc => (
-            <Marker key={loc.id} position={[loc.lat, loc.lng]} icon={createIcon("#0ea5e9", 10)}>
-              <Popup><strong>⛽ {loc.name}</strong><br/>{loc.description}</Popup>
-            </Marker>
-          ))}
-
-          {/* Viewpoints */}
-          {mockLocations.filter(l => l.type === "viewpoint").map(loc => (
-            <Marker key={loc.id} position={[loc.lat, loc.lng]} icon={createIcon("#f59e0b", 10)}>
-              <Popup><strong>👁️ {loc.name}</strong><br/>{loc.description}<br/>⭐ {loc.rating}</Popup>
-            </Marker>
-          ))}
-
-          {/* Current location pulse */}
-          {isNavigating && (
-            <Circle
-              center={routeCoords[1]}
-              radius={200}
-              pathOptions={{ color: "hsl(162, 72%, 40%)", fillColor: "hsl(162, 72%, 40%)", fillOpacity: 0.2, weight: 2 }}
-            />
-          )}
-        </MapContainer>
-      </div>
+      <div className="absolute inset-0 z-0" ref={mapRef} />
 
       {/* Map Controls */}
       <div className="absolute top-4 right-4 flex flex-col gap-2 z-[400]">

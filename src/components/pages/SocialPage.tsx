@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MapContainer, TileLayer, Marker, Popup, Circle as LCircle } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { mockMessages, collaborators, currentUser } from "@/data/mockData";
@@ -21,6 +20,43 @@ const createUserIcon = (name: string, online: boolean) => L.divIcon({
   iconSize: [32, 32],
   iconAnchor: [16, 16],
 });
+
+function TrackingMap() {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<L.Map | null>(null);
+  const allUsers = [currentUser, ...collaborators.filter(c => c.lastLocation)];
+
+  useEffect(() => {
+    if (!mapRef.current || mapInstance.current) return;
+
+    const map = L.map(mapRef.current, {
+      center: [14.58, 121.0],
+      zoom: 12,
+      zoomControl: false,
+      attributionControl: false,
+    });
+
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png").addTo(map);
+
+    allUsers.forEach(u => {
+      if (!u.lastLocation) return;
+      L.marker([u.lastLocation.lat, u.lastLocation.lng], {
+        icon: createUserIcon(u.name, u.isOnline),
+      })
+        .bindPopup(`<strong>${u.name}</strong><br/><span style="color:${u.isOnline ? '#22c55e' : '#94a3b8'}">${u.isOnline ? "Online" : "Offline"}</span><br/><small>${u.role}</small>`)
+        .addTo(map);
+    });
+
+    mapInstance.current = map;
+
+    return () => {
+      map.remove();
+      mapInstance.current = null;
+    };
+  }, []);
+
+  return <div ref={mapRef} className="h-full w-full" />;
+}
 
 export default function SocialPage() {
   const [message, setMessage] = useState("");
@@ -185,30 +221,8 @@ export default function SocialPage() {
 
         <TabsContent value="tracking" className="flex-1 m-0 relative">
           <div className="absolute inset-0 z-0">
-            <MapContainer
-              center={[14.58, 121.0]}
-              zoom={12}
-              style={{ height: "100%", width: "100%" }}
-              zoomControl={false}
-              attributionControl={false}
-            >
-              <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
-              {allUsers.map(u => u.lastLocation && (
-                <Marker
-                  key={u.id}
-                  position={[u.lastLocation.lat, u.lastLocation.lng]}
-                  icon={createUserIcon(u.name, u.isOnline)}
-                >
-                  <Popup>
-                    <strong>{u.name}</strong><br/>
-                    <span style={{color: u.isOnline ? '#22c55e' : '#94a3b8'}}>{u.isOnline ? "Online" : "Offline"}</span>
-                    <br/><small>{u.role}</small>
-                  </Popup>
-                </Marker>
-              ))}
-            </MapContainer>
+            <TrackingMap />
           </div>
-          {/* Tracking overlay */}
           <div className="absolute bottom-4 left-4 right-4 z-[400]">
             <Card className="border-0 card-elevated">
               <CardContent className="p-3.5">
