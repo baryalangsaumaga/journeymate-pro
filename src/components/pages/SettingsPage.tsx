@@ -8,7 +8,11 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { toast } from "@/hooks/use-toast";
 import { languages } from "@/data/mockData";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
@@ -36,6 +40,47 @@ export default function SettingsPage() {
   const [offlineMode, setOfflineMode] = useState(true);
   const [notifications, setNotifications] = useState(true);
   const [locationSharing, setLocationSharing] = useState(true);
+  const [editOpen, setEditOpen] = useState(false);
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  const [connectedProviders, setConnectedProviders] = useState<string[]>(["google"]);
+  const [editName, setEditName] = useState("Alex Rivera");
+  const [editEmail, setEditEmail] = useState("alex.rivera@email.com");
+
+  const handleSaveProfile = () => {
+    toast({ title: "✅ Profile Updated!", description: "Your changes have been saved." });
+    setEditOpen(false);
+  };
+
+  const handleThemeChange = (themeId: string) => {
+    setSelectedTheme(themeId);
+    toast({ title: `🎨 Theme: ${themes.find(t => t.id === themeId)?.label}`, description: "Theme preference saved." });
+  };
+
+  const handleLangChange = (code: string) => {
+    setSelectedLang(code);
+    const lang = languages.find(l => l.code === code);
+    toast({ title: `🌐 Language: ${lang?.name}`, description: "Language preference saved." });
+  };
+
+  const toggleProvider = (id: string) => {
+    const isConnected = connectedProviders.includes(id);
+    setConnectedProviders(prev => isConnected ? prev.filter(p => p !== id) : [...prev, id]);
+    const provider = socialProviders.find(p => p.id === id);
+    toast({
+      title: isConnected ? `❌ ${provider?.label} Disconnected` : `✅ ${provider?.label} Connected`,
+      description: isConnected ? "Account unlinked." : "Account linked successfully.",
+    });
+  };
+
+  const handleToggle = (name: string, value: boolean, setter: (v: boolean) => void) => {
+    setter(value);
+    toast({ title: `${value ? "✅" : "❌"} ${name} ${value ? "Enabled" : "Disabled"}` });
+  };
+
+  const handleSignOut = () => {
+    toast({ title: "👋 Signed Out", description: "You've been signed out successfully." });
+    setSignOutOpen(false);
+  };
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="px-4 py-4 pb-6 space-y-4">
@@ -53,11 +98,11 @@ export default function SettingsPage() {
                 <UserCircle className="w-7 h-7 text-primary-foreground" />
               </div>
               <div className="flex-1">
-                <h3 className="font-display font-bold text-base">Alex Rivera</h3>
-                <p className="text-[11px] text-muted-foreground">alex.rivera@email.com</p>
+                <h3 className="font-display font-bold text-base">{editName}</h3>
+                <p className="text-[11px] text-muted-foreground">{editEmail}</p>
                 <Badge className="text-[9px] h-[18px] mt-1 bg-accent/10 text-accent font-semibold border-0">Explorer Level 12</Badge>
               </div>
-              <Button variant="outline" size="sm" className="h-8 text-xs rounded-xl font-semibold">Edit</Button>
+              <Button variant="outline" size="sm" className="h-8 text-xs rounded-xl font-semibold" onClick={() => setEditOpen(true)}>Edit</Button>
             </div>
           </CardContent>
         </Card>
@@ -77,7 +122,7 @@ export default function SettingsPage() {
                   <p className="text-[10px] text-muted-foreground">Browse without account (limited)</p>
                 </div>
               </div>
-              <Switch checked={guestMode} onCheckedChange={setGuestMode} />
+              <Switch checked={guestMode} onCheckedChange={(v) => handleToggle("Guest Mode", v, setGuestMode)} />
             </div>
             {guestMode && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mt-3 p-2.5 bg-info/5 rounded-xl">
@@ -102,7 +147,7 @@ export default function SettingsPage() {
                 return (
                   <button
                     key={theme.id}
-                    onClick={() => setSelectedTheme(theme.id)}
+                    onClick={() => handleThemeChange(theme.id)}
                     className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl transition-all tap-highlight ${
                       selectedTheme === theme.id ? "bg-primary/8 ring-2 ring-primary" : "bg-muted"
                     }`}
@@ -136,7 +181,7 @@ export default function SettingsPage() {
               {languages.map(lang => (
                 <button
                   key={lang.code}
-                  onClick={() => setSelectedLang(lang.code)}
+                  onClick={() => handleLangChange(lang.code)}
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs transition-all tap-highlight ${
                     selectedLang === lang.code ? "bg-primary/8 text-primary ring-1 ring-primary/20 font-semibold" : "bg-muted text-foreground hover:bg-muted/80 font-medium"
                   }`}
@@ -166,10 +211,12 @@ export default function SettingsPage() {
                     <span className="text-lg">{provider.icon}</span>
                     <span className="text-xs font-semibold">{provider.label}</span>
                   </div>
-                  {provider.connected ? (
-                    <Badge className="text-[9px] h-5 bg-success/10 text-success font-semibold border-0">Connected</Badge>
+                  {connectedProviders.includes(provider.id) ? (
+                    <Button variant="ghost" size="sm" className="h-7 text-[10px] rounded-lg font-semibold text-success" onClick={() => toggleProvider(provider.id)}>
+                      <Check className="w-3 h-3 mr-0.5" /> Connected
+                    </Button>
                   ) : (
-                    <Button variant="outline" size="sm" className="h-7 text-[10px] rounded-lg font-semibold">Connect</Button>
+                    <Button variant="outline" size="sm" className="h-7 text-[10px] rounded-lg font-semibold" onClick={() => toggleProvider(provider.id)}>Connect</Button>
                   )}
                 </div>
               ))}
@@ -197,7 +244,7 @@ export default function SettingsPage() {
                     <p className="text-[10px] text-muted-foreground">{desc}</p>
                   </div>
                 </div>
-                <Switch checked={state} onCheckedChange={setter} />
+                <Switch checked={state} onCheckedChange={(v) => handleToggle(label, v, setter)} />
               </div>
             ))}
           </CardContent>
@@ -206,12 +253,53 @@ export default function SettingsPage() {
 
       {/* Logout */}
       <motion.div variants={item}>
-        <Button variant="outline" className="w-full h-11 text-destructive border-destructive/15 gap-2 rounded-xl font-semibold">
+        <Button variant="outline" className="w-full h-11 text-destructive border-destructive/15 gap-2 rounded-xl font-semibold" onClick={() => setSignOutOpen(true)}>
           <LogOut className="w-4 h-4" /> Sign Out
         </Button>
       </motion.div>
 
-      <p className="text-center text-[10px] text-muted-foreground font-medium">TrailSync v2.0.0 · Made with ❤️</p>
+      <p className="text-center text-[10px] text-muted-foreground font-medium">TrailSync v2.1.0 · Made with ❤️</p>
+
+      {/* Edit Profile Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-[340px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">Edit Profile</DialogTitle>
+            <DialogDescription>Update your personal info</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Name</label>
+              <Input value={editName} onChange={e => setEditName(e.target.value)} className="mt-1.5 h-10 rounded-xl border-border" />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Email</label>
+              <Input value={editEmail} onChange={e => setEditEmail(e.target.value)} type="email" className="mt-1.5 h-10 rounded-xl border-border" />
+            </div>
+          </div>
+          <Button className="w-full h-10 rounded-xl shadow-travel font-semibold" onClick={handleSaveProfile}>
+            Save Changes
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sign Out Confirmation */}
+      <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
+        <AlertDialogContent className="max-w-[320px] rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">Sign Out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You'll need to sign in again to access your trips and data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-xl" onClick={handleSignOut}>
+              Sign Out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   );
 }

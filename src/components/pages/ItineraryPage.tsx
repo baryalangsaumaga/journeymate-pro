@@ -4,11 +4,15 @@ import {
   MapPin, Clock, CheckCircle2, Circle, Plus, Download, Share2,
   Car, Bus, Train, Plane, Ship, Bike, Footprints, CalendarDays,
   Users, MoreVertical, ChevronLeft, Edit3, Copy, Trash2,
-  AlertCircle, Navigation
+  AlertCircle, Navigation, X
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { toast } from "@/hooks/use-toast";
 import { mockTrips } from "@/data/mockData";
 import type { TransitType, WeatherCondition, Trip } from "@/types/travel";
 
@@ -19,14 +23,88 @@ const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
 
 export default function ItineraryPage() {
-  const [selectedTrip, setSelectedTrip] = useState<Trip>(mockTrips[0]);
+  const [trips, setTrips] = useState<Trip[]>(mockTrips);
+  const [selectedTrip, setSelectedTrip] = useState<Trip>(trips[0]);
   const [view, setView] = useState<"list" | "detail">("list");
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "planning" | "completed">("all");
+  const [newTripOpen, setNewTripOpen] = useState(false);
+  const [addStopOpen, setAddStopOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [newTripName, setNewTripName] = useState("");
+  const [newTripDesc, setNewTripDesc] = useState("");
+  const [newStopName, setNewStopName] = useState("");
+  const [newStopNotes, setNewStopNotes] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
 
   const completedStops = selectedTrip.stops.filter(s => s.isCompleted).length;
   const progress = (completedStops / selectedTrip.stops.length) * 100;
 
-  const filteredTrips = mockTrips.filter(t => activeFilter === "all" || t.status === activeFilter);
+  const filteredTrips = trips.filter(t => activeFilter === "all" || t.status === activeFilter);
+
+  const handleCreateTrip = () => {
+    if (!newTripName.trim()) return;
+    toast({ title: "✈️ Trip Created!", description: `"${newTripName}" has been added to your trips.` });
+    setNewTripName("");
+    setNewTripDesc("");
+    setNewTripOpen(false);
+  };
+
+  const handleAddStop = () => {
+    if (!newStopName.trim()) return;
+    toast({ title: "📍 Stop Added!", description: `"${newStopName}" added to ${selectedTrip.title}.` });
+    setNewStopName("");
+    setNewStopNotes("");
+    setAddStopOpen(false);
+  };
+
+  const handleDeleteTrip = () => {
+    setTrips(prev => prev.filter(t => t.id !== selectedTrip.id));
+    toast({ title: "🗑️ Trip Deleted", description: `"${selectedTrip.title}" has been removed.`, variant: "destructive" });
+    setDeleteOpen(false);
+    setView("list");
+    if (trips.length > 1) setSelectedTrip(trips.find(t => t.id !== selectedTrip.id)!);
+  };
+
+  const handleDuplicate = () => {
+    toast({ title: "📋 Trip Duplicated!", description: `A copy of "${selectedTrip.title}" has been created.` });
+  };
+
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({ title: selectedTrip.title, text: selectedTrip.description }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(`Check out my trip: ${selectedTrip.title}`);
+      toast({ title: "🔗 Link Copied!", description: "Trip link copied to clipboard." });
+    }
+  };
+
+  const handleDownload = () => {
+    toast({ title: "📥 Downloading...", description: "Trip data saved for offline use." });
+  };
+
+  const handleInvite = () => {
+    if (!inviteEmail.trim()) return;
+    toast({ title: "📧 Invite Sent!", description: `Invitation sent to ${inviteEmail}.` });
+    setInviteEmail("");
+    setInviteOpen(false);
+  };
+
+  const handleEditTrip = () => {
+    toast({ title: "✏️ Trip Updated!", description: "Changes saved successfully." });
+    setEditOpen(false);
+  };
+
+  const handleToggleStop = (stopId: string) => {
+    setSelectedTrip(prev => ({
+      ...prev,
+      stops: prev.stops.map(s => s.id === stopId ? { ...s, isCompleted: !s.isCompleted } : s)
+    }));
+    toast({ title: "✅ Stop Updated" });
+  };
 
   return (
     <div className="px-4 py-4 pb-6 space-y-4">
@@ -43,9 +121,9 @@ export default function ItineraryPage() {
             <motion.div variants={item} className="flex items-center justify-between">
               <div>
                 <h2 className="font-display font-bold text-xl tracking-tight">My Trips</h2>
-                <p className="text-[11px] text-muted-foreground mt-0.5">{mockTrips.length} trips planned</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{trips.length} trips planned</p>
               </div>
-              <Button size="sm" className="h-8 gap-1.5 rounded-xl shadow-travel text-xs font-semibold">
+              <Button size="sm" className="h-8 gap-1.5 rounded-xl shadow-travel text-xs font-semibold" onClick={() => setNewTripOpen(true)}>
                 <Plus className="w-3.5 h-3.5" /> New Trip
               </Button>
             </motion.div>
@@ -65,7 +143,6 @@ export default function ItineraryPage() {
               ))}
             </motion.div>
 
-            {/* Empty State */}
             {filteredTrips.length === 0 && (
               <motion.div variants={item} className="flex flex-col items-center py-16 text-center">
                 <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-3">
@@ -73,6 +150,9 @@ export default function ItineraryPage() {
                 </div>
                 <p className="text-sm font-semibold text-muted-foreground">No {activeFilter} trips</p>
                 <p className="text-[11px] text-muted-foreground mt-1">Create a new trip to get started!</p>
+                <Button size="sm" className="mt-3 h-8 rounded-xl text-xs font-semibold" onClick={() => setNewTripOpen(true)}>
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Create Trip
+                </Button>
               </motion.div>
             )}
 
@@ -155,11 +235,11 @@ export default function ItineraryPage() {
                     <ChevronLeft className="w-5 h-5" />
                   </Button>
                   <div className="absolute top-3 right-3 flex gap-1">
-                    <Button variant="ghost" size="icon" className="text-white bg-black/20 backdrop-blur-sm h-8 w-8 rounded-xl">
+                    <Button variant="ghost" size="icon" className="text-white bg-black/20 backdrop-blur-sm h-8 w-8 rounded-xl" onClick={() => { setEditTitle(selectedTrip.title); setEditDesc(selectedTrip.description); setEditOpen(true); }}>
                       <Edit3 className="w-3.5 h-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="text-white bg-black/20 backdrop-blur-sm h-8 w-8 rounded-xl">
-                      <MoreVertical className="w-3.5 h-3.5" />
+                    <Button variant="ghost" size="icon" className="text-white bg-black/20 backdrop-blur-sm h-8 w-8 rounded-xl" onClick={handleShare}>
+                      <Share2 className="w-3.5 h-3.5" />
                     </Button>
                   </div>
                   <div className="absolute bottom-3.5 left-3.5 right-3.5">
@@ -180,8 +260,8 @@ export default function ItineraryPage() {
                       </div>
                     </div>
                     <div className="flex gap-1">
-                      <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl"><Share2 className="w-3.5 h-3.5" /></Button>
-                      <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl"><Download className="w-3.5 h-3.5" /></Button>
+                      <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={handleShare}><Share2 className="w-3.5 h-3.5" /></Button>
+                      <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={handleDownload}><Download className="w-3.5 h-3.5" /></Button>
                     </div>
                   </div>
                   <div className="mt-3 flex items-center gap-2.5">
@@ -226,15 +306,18 @@ export default function ItineraryPage() {
                   return (
                     <div key={stop.id} className="flex gap-3">
                       <div className="flex flex-col items-center">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                          stop.isCompleted
-                            ? "bg-success text-success-foreground shadow-sm"
-                            : isNext
-                              ? "bg-primary text-primary-foreground shadow-travel"
-                              : "bg-muted text-muted-foreground"
-                        }`}>
+                        <button
+                          onClick={() => handleToggleStop(stop.id)}
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
+                            stop.isCompleted
+                              ? "bg-success text-success-foreground shadow-sm"
+                              : isNext
+                                ? "bg-primary text-primary-foreground shadow-travel"
+                                : "bg-muted text-muted-foreground hover:bg-muted/80"
+                          }`}
+                        >
                           {stop.isCompleted ? <CheckCircle2 className="w-4.5 h-4.5" /> : isNext ? <Navigation className="w-4 h-4" /> : <Circle className="w-4.5 h-4.5" />}
-                        </div>
+                        </button>
                         {idx < selectedTrip.stops.length - 1 && (
                           <div className={`w-0.5 h-16 my-0.5 rounded-full ${stop.isCompleted ? "bg-success" : "bg-border"}`} />
                         )}
@@ -274,7 +357,7 @@ export default function ItineraryPage() {
 
             {/* Add Stop */}
             <motion.div variants={item}>
-              <Button variant="outline" className="w-full h-11 rounded-2xl border-dashed border-2 border-border text-muted-foreground gap-2 font-semibold text-xs">
+              <Button variant="outline" className="w-full h-11 rounded-2xl border-dashed border-2 border-border text-muted-foreground gap-2 font-semibold text-xs" onClick={() => setAddStopOpen(true)}>
                 <Plus className="w-4 h-4" /> Add Stop to Itinerary
               </Button>
             </motion.div>
@@ -287,7 +370,7 @@ export default function ItineraryPage() {
                     <span className="text-xs font-semibold flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5" /> Travelers
                     </span>
-                    <Button variant="ghost" size="sm" className="h-7 text-[11px] text-primary font-semibold rounded-lg">
+                    <Button variant="ghost" size="sm" className="h-7 text-[11px] text-primary font-semibold rounded-lg" onClick={() => setInviteOpen(true)}>
                       <Plus className="w-3 h-3 mr-0.5" /> Invite
                     </Button>
                   </div>
@@ -321,10 +404,10 @@ export default function ItineraryPage() {
                     <span className="text-xs font-semibold text-destructive">Danger Zone</span>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex-1 h-8 text-[10px] rounded-lg gap-1 font-semibold">
+                    <Button variant="outline" size="sm" className="flex-1 h-8 text-[10px] rounded-lg gap-1 font-semibold" onClick={handleDuplicate}>
                       <Copy className="w-3 h-3" /> Duplicate
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 h-8 text-[10px] rounded-lg gap-1 text-destructive border-destructive/20 font-semibold">
+                    <Button variant="outline" size="sm" className="flex-1 h-8 text-[10px] rounded-lg gap-1 text-destructive border-destructive/20 font-semibold" onClick={() => setDeleteOpen(true)}>
                       <Trash2 className="w-3 h-3" /> Delete Trip
                     </Button>
                   </div>
@@ -334,6 +417,109 @@ export default function ItineraryPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* New Trip Dialog */}
+      <Dialog open={newTripOpen} onOpenChange={setNewTripOpen}>
+        <DialogContent className="max-w-[340px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">Create New Trip</DialogTitle>
+            <DialogDescription>Plan your next adventure</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Trip Name</label>
+              <Input value={newTripName} onChange={e => setNewTripName(e.target.value)} placeholder="e.g. Bali Beach Getaway" className="mt-1.5 h-10 rounded-xl border-border" />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Description</label>
+              <Input value={newTripDesc} onChange={e => setNewTripDesc(e.target.value)} placeholder="A brief description..." className="mt-1.5 h-10 rounded-xl border-border" />
+            </div>
+          </div>
+          <Button className="w-full h-10 rounded-xl shadow-travel font-semibold" onClick={handleCreateTrip} disabled={!newTripName.trim()}>
+            Create Trip
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Stop Dialog */}
+      <Dialog open={addStopOpen} onOpenChange={setAddStopOpen}>
+        <DialogContent className="max-w-[340px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">Add Stop</DialogTitle>
+            <DialogDescription>Add a new stop to your itinerary</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Location Name</label>
+              <Input value={newStopName} onChange={e => setNewStopName(e.target.value)} placeholder="e.g. Tagaytay Picnic Grove" className="mt-1.5 h-10 rounded-xl border-border" />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Notes</label>
+              <Input value={newStopNotes} onChange={e => setNewStopNotes(e.target.value)} placeholder="What to do here..." className="mt-1.5 h-10 rounded-xl border-border" />
+            </div>
+          </div>
+          <Button className="w-full h-10 rounded-xl shadow-travel font-semibold" onClick={handleAddStop} disabled={!newStopName.trim()}>
+            <Plus className="w-4 h-4 mr-1" /> Add Stop
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite Dialog */}
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent className="max-w-[340px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">Invite Traveler</DialogTitle>
+            <DialogDescription>Send an invite to join this trip</DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Email Address</label>
+            <Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="friend@email.com" className="mt-1.5 h-10 rounded-xl border-border" type="email" />
+          </div>
+          <Button className="w-full h-10 rounded-xl shadow-travel font-semibold" onClick={handleInvite} disabled={!inviteEmail.trim()}>
+            Send Invite
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Trip Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-[340px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">Edit Trip</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Trip Name</label>
+              <Input value={editTitle} onChange={e => setEditTitle(e.target.value)} className="mt-1.5 h-10 rounded-xl border-border" />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Description</label>
+              <Input value={editDesc} onChange={e => setEditDesc(e.target.value)} className="mt-1.5 h-10 rounded-xl border-border" />
+            </div>
+          </div>
+          <Button className="w-full h-10 rounded-xl shadow-travel font-semibold" onClick={handleEditTrip}>
+            Save Changes
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent className="max-w-[320px] rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">Delete Trip?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete "{selectedTrip.title}" and all its data. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-xl" onClick={handleDeleteTrip}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

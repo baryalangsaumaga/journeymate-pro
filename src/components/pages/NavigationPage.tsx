@@ -10,11 +10,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { mockRouteInfo, mockLocations } from "@/data/mockData";
 
-// Fix default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
@@ -30,12 +30,8 @@ const createIcon = (color: string, size: number = 12) => L.divIcon({
 });
 
 const routeCoords: [number, number][] = [
-  [14.5895, 120.9740],
-  [14.5833, 120.9667],
-  [14.5647, 121.0300],
-  [14.5547, 121.0509],
-  [14.4200, 121.0400],
-  [14.1153, 120.9621],
+  [14.5895, 120.9740], [14.5833, 120.9667], [14.5647, 121.0300],
+  [14.5547, 121.0509], [14.4200, 121.0400], [14.1153, 120.9621],
 ];
 
 const transitModes = [
@@ -51,114 +47,117 @@ export default function NavigationPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [mapStyle, setMapStyle] = useState<"voyager" | "dark" | "light">("voyager");
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const polylineRef = useRef<L.Polyline | null>(null);
   const circleRef = useRef<L.Circle | null>(null);
+  const tileRef = useRef<L.TileLayer | null>(null);
 
   const center: [number, number] = [14.45, 120.98];
 
+  const tileUrls: Record<string, string> = {
+    voyager: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+  };
+
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
-    
     const map = L.map(mapRef.current, {
-      center,
-      zoom: 11,
-      zoomControl: false,
-      attributionControl: false,
+      center, zoom: 11, zoomControl: false, attributionControl: false,
     });
-
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png").addTo(map);
-
-    // Route line
+    tileRef.current = L.tileLayer(tileUrls[mapStyle]).addTo(map);
     polylineRef.current = L.polyline(routeCoords, {
-      color: "hsl(162, 72%, 40%)",
-      weight: 4,
-      opacity: 0.9,
-      dashArray: "8 6",
+      color: "hsl(162, 72%, 40%)", weight: 4, opacity: 0.9, dashArray: "8 6",
     }).addTo(map);
-
-    // Start marker
-    L.marker(routeCoords[0], { icon: createIcon("#22c55e", 16) })
-      .bindPopup("<strong>Start:</strong> Intramuros, Manila")
-      .addTo(map);
-
-    // End marker
-    L.marker(routeCoords[routeCoords.length - 1], { icon: createIcon("#ef4444", 16) })
-      .bindPopup("<strong>Destination:</strong> Tagaytay Ridge")
-      .addTo(map);
-
-    // Gas Stations
+    L.marker(routeCoords[0], { icon: createIcon("#22c55e", 16) }).bindPopup("<strong>Start:</strong> Intramuros, Manila").addTo(map);
+    L.marker(routeCoords[routeCoords.length - 1], { icon: createIcon("#ef4444", 16) }).bindPopup("<strong>Destination:</strong> Tagaytay Ridge").addTo(map);
     mockLocations.filter(l => l.type === "gas-station").forEach(loc => {
-      L.marker([loc.lat, loc.lng], { icon: createIcon("#0ea5e9", 10) })
-        .bindPopup(`<strong>⛽ ${loc.name}</strong><br/>${loc.description}`)
-        .addTo(map);
+      L.marker([loc.lat, loc.lng], { icon: createIcon("#0ea5e9", 10) }).bindPopup(`<strong>⛽ ${loc.name}</strong><br/>${loc.description}`).addTo(map);
     });
-
-    // Viewpoints
     mockLocations.filter(l => l.type === "viewpoint").forEach(loc => {
-      L.marker([loc.lat, loc.lng], { icon: createIcon("#f59e0b", 10) })
-        .bindPopup(`<strong>👁️ ${loc.name}</strong><br/>${loc.description}<br/>⭐ ${loc.rating}`)
-        .addTo(map);
+      L.marker([loc.lat, loc.lng], { icon: createIcon("#f59e0b", 10) }).bindPopup(`<strong>👁️ ${loc.name}</strong><br/>${loc.description}<br/>⭐ ${loc.rating}`).addTo(map);
     });
-
     mapInstance.current = map;
-
-    return () => {
-      map.remove();
-      mapInstance.current = null;
-    };
+    return () => { map.remove(); mapInstance.current = null; };
   }, []);
 
-  // Update polyline dash and circle when navigating changes
+  useEffect(() => {
+    if (!mapInstance.current || !tileRef.current) return;
+    tileRef.current.setUrl(tileUrls[mapStyle]);
+  }, [mapStyle]);
+
   useEffect(() => {
     if (!mapInstance.current) return;
-
-    if (polylineRef.current) {
-      polylineRef.current.setStyle({ dashArray: isNavigating ? undefined : "8 6" });
-    }
-
+    if (polylineRef.current) polylineRef.current.setStyle({ dashArray: isNavigating ? undefined : "8 6" });
     if (isNavigating) {
       if (!circleRef.current) {
         circleRef.current = L.circle(routeCoords[1], {
-          radius: 200,
-          color: "hsl(162, 72%, 40%)",
-          fillColor: "hsl(162, 72%, 40%)",
-          fillOpacity: 0.2,
-          weight: 2,
+          radius: 200, color: "hsl(162, 72%, 40%)", fillColor: "hsl(162, 72%, 40%)", fillOpacity: 0.2, weight: 2,
         }).addTo(mapInstance.current);
       }
     } else {
-      if (circleRef.current) {
-        circleRef.current.remove();
-        circleRef.current = null;
-      }
+      if (circleRef.current) { circleRef.current.remove(); circleRef.current = null; }
     }
   }, [isNavigating]);
 
+  const handleLocate = () => {
+    if (mapInstance.current) {
+      mapInstance.current.setView(routeCoords[1], 15, { animate: true });
+      toast({ title: "📍 Centered on Your Location" });
+    }
+  };
+
+  const handleLayerSwitch = () => {
+    const styles: ("voyager" | "dark" | "light")[] = ["voyager", "dark", "light"];
+    const next = styles[(styles.indexOf(mapStyle) + 1) % styles.length];
+    setMapStyle(next);
+    toast({ title: `🗺️ Map Style: ${next.charAt(0).toUpperCase() + next.slice(1)}` });
+  };
+
+  const handleMuteToggle = () => {
+    setIsMuted(!isMuted);
+    toast({ title: isMuted ? "🔊 Voice Guidance On" : "🔇 Voice Guidance Off" });
+  };
+
+  const handleStartNav = () => {
+    setIsNavigating(!isNavigating);
+    if (!isNavigating) {
+      toast({ title: "🧭 Navigation Started!", description: "Follow the route on the map." });
+      setSheetExpanded(false);
+    } else {
+      toast({ title: "⏹️ Navigation Stopped" });
+      setSheetExpanded(true);
+    }
+  };
+
+  const handleSearch = () => {
+    if (searchQuery.trim()) {
+      toast({ title: "🔍 Searching...", description: `Looking for "${searchQuery}" nearby.` });
+    }
+  };
+
   return (
     <div className="relative h-[calc(100dvh-7rem)]">
-      {/* Real Map */}
       <div className="absolute inset-0 z-0" ref={mapRef} />
 
-      {/* Map Controls */}
       <div className="absolute top-4 right-4 flex flex-col gap-2 z-[400]">
-        <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50"><Layers className="w-4 h-4" /></Button>
-        <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50"><Locate className="w-4 h-4" /></Button>
-        <Button
-          variant="outline" size="icon"
-          className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50"
-          onClick={() => setIsMuted(!isMuted)}
-        >
+        <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLayerSwitch}><Layers className="w-4 h-4" /></Button>
+        <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLocate}><Locate className="w-4 h-4" /></Button>
+        <Button variant="outline" size="icon" className={`h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50 ${isMuted ? "text-muted-foreground" : ""}`} onClick={handleMuteToggle}>
           {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
         </Button>
       </div>
 
-      {/* Search */}
       <div className="absolute top-4 left-4 right-16 z-[400]">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleSearch()}
             placeholder="Search destination..."
             className="pl-9 h-10 bg-card/95 backdrop-blur-sm shadow-card-hover border-border/50 text-sm rounded-xl"
             onFocus={() => setSearchFocused(true)}
@@ -167,7 +166,6 @@ export default function NavigationPage() {
         </div>
       </div>
 
-      {/* Navigation HUD */}
       <AnimatePresence>
         {isNavigating && (
           <motion.div
@@ -208,7 +206,6 @@ export default function NavigationPage() {
         )}
       </AnimatePresence>
 
-      {/* Bottom Sheet */}
       <motion.div
         className="absolute bottom-0 left-0 right-0 glass-ultra rounded-t-3xl z-[400] border-t border-border/30"
         animate={{ height: sheetExpanded ? "auto" : 52 }}
@@ -226,12 +223,11 @@ export default function NavigationPage() {
               exit={{ opacity: 0 }}
               className="px-4 pb-4 space-y-3"
             >
-              {/* Transit Modes */}
               <div className="flex gap-2">
                 {transitModes.map(({ id, icon: Icon, label, eta }) => (
                   <button
                     key={id}
-                    onClick={() => setSelectedMode(id)}
+                    onClick={() => { setSelectedMode(id); toast({ title: `🚗 Mode: ${label}`, description: `ETA: ${eta}` }); }}
                     className={`flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl transition-all tap-highlight ${
                       selectedMode === id ? "bg-primary text-primary-foreground shadow-travel" : "bg-muted"
                     }`}
@@ -243,7 +239,6 @@ export default function NavigationPage() {
                 ))}
               </div>
 
-              {/* Route Info */}
               <Card className="border-0 card-elevated">
                 <CardContent className="p-3.5">
                   <div className="flex items-center justify-between mb-2.5">
@@ -268,7 +263,6 @@ export default function NavigationPage() {
                 </CardContent>
               </Card>
 
-              {/* Speed & Gas */}
               <div className="flex gap-2">
                 <Card className="flex-1 border-0 card-interactive">
                   <CardContent className="p-2.5 flex items-center gap-2.5">
@@ -292,12 +286,11 @@ export default function NavigationPage() {
                 </Card>
               </div>
 
-              {/* Navigation Button */}
               <Button
                 className={`w-full h-12 rounded-2xl font-display font-bold shadow-travel text-sm gap-2 ${
                   isNavigating ? "bg-destructive hover:bg-destructive/90" : "glow-primary"
                 }`}
-                onClick={() => setIsNavigating(!isNavigating)}
+                onClick={handleStartNav}
               >
                 <Navigation className={`w-4.5 h-4.5 ${isNavigating ? "" : "animate-pulse"}`} />
                 {isNavigating ? "Stop Navigation" : "Start Navigation"}

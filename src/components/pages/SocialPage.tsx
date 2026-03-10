@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { mockMessages, collaborators, currentUser } from "@/data/mockData";
@@ -63,6 +65,8 @@ export default function SocialPage() {
   const [messages, setMessages] = useState(mockMessages);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [shareLocation, setShareLocation] = useState(true);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -82,6 +86,48 @@ export default function SocialPage() {
     setMessage("");
   };
 
+  const sendLocationMsg = () => {
+    setMessages([...messages, {
+      id: `m${messages.length + 1}`,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userAvatar: currentUser.avatar,
+      message: "📍 Shared live location — Makati City, Philippines",
+      timestamp: new Date().toISOString(),
+      type: "location",
+    }]);
+    toast({ title: "📍 Location Shared", description: "Your live location was sent to the group." });
+  };
+
+  const sendImageMsg = () => {
+    setMessages([...messages, {
+      id: `m${messages.length + 1}`,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userAvatar: currentUser.avatar,
+      message: "📸 Shared a photo from Tagaytay",
+      timestamp: new Date().toISOString(),
+      type: "text",
+    }]);
+    toast({ title: "📸 Photo Shared", description: "Image sent to the group chat." });
+  };
+
+  const handleCall = (type: "audio" | "video") => {
+    toast({ title: type === "audio" ? "📞 Calling..." : "📹 Video Calling...", description: `Starting ${type} call with Manila Heritage Walk group.` });
+  };
+
+  const handleInvite = () => {
+    if (!inviteEmail.trim()) return;
+    toast({ title: "📧 Invite Sent!", description: `Invitation sent to ${inviteEmail}.` });
+    setInviteEmail("");
+    setInviteOpen(false);
+  };
+
+  const handleShareProfile = (name: string) => {
+    navigator.clipboard.writeText(`Check out ${name}'s TrailSync profile!`);
+    toast({ title: "🔗 Profile Link Copied!", description: `${name}'s profile link copied to clipboard.` });
+  };
+
   const roleIcons: Record<string, typeof Crown> = { owner: Crown, editor: Navigation, viewer: Eye };
   const allUsers = [currentUser, ...collaborators.filter(c => c.lastLocation)];
 
@@ -97,7 +143,6 @@ export default function SocialPage() {
         </div>
 
         <TabsContent value="chat" className="flex-1 flex flex-col min-h-0 m-0">
-          {/* Header */}
           <div className="px-4 py-2.5 flex items-center justify-between border-b border-border/30">
             <div className="flex items-center gap-2.5">
               <div className="flex -space-x-1.5">
@@ -111,12 +156,11 @@ export default function SocialPage() {
               </div>
             </div>
             <div className="flex gap-0.5">
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl"><Phone className="w-4 h-4" /></Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl"><Video className="w-4 h-4" /></Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => handleCall("audio")}><Phone className="w-4 h-4" /></Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => handleCall("video")}><Video className="w-4 h-4" /></Button>
             </div>
           </div>
 
-          {/* Messages */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
             {messages.map(msg => {
               const isMe = msg.userId === currentUser.id;
@@ -155,14 +199,13 @@ export default function SocialPage() {
             })}
           </div>
 
-          {/* Input */}
           <div className="px-4 py-2.5 border-t border-border/30">
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0 rounded-xl"><Image className="w-4 h-4" /></Button>
+              <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0 rounded-xl" onClick={sendImageMsg}><Image className="w-4 h-4" /></Button>
               <Button
                 variant="ghost" size="icon"
                 className={`h-9 w-9 flex-shrink-0 rounded-xl ${shareLocation ? "text-primary bg-primary/8" : ""}`}
-                onClick={() => setShareLocation(!shareLocation)}
+                onClick={sendLocationMsg}
               >
                 <MapPin className="w-4 h-4" />
               </Button>
@@ -188,7 +231,7 @@ export default function SocialPage() {
         <TabsContent value="members" className="flex-1 overflow-y-auto m-0 px-4 py-3">
           <div className="flex items-center justify-between mb-3">
             <h3 className="section-header">Trip Members</h3>
-            <Button size="sm" className="h-8 text-xs gap-1.5 rounded-xl font-semibold">
+            <Button size="sm" className="h-8 text-xs gap-1.5 rounded-xl font-semibold" onClick={() => setInviteOpen(true)}>
               <UserPlus className="w-3.5 h-3.5" /> Invite
             </Button>
           </div>
@@ -210,7 +253,7 @@ export default function SocialPage() {
                       </div>
                     </div>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl"><Share2 className="w-3.5 h-3.5" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => handleShareProfile(user.name)}><Share2 className="w-3.5 h-3.5" /></Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -241,6 +284,23 @@ export default function SocialPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Invite Dialog */}
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent className="max-w-[340px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">Invite Member</DialogTitle>
+            <DialogDescription>Add someone to the trip group</DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Email Address</label>
+            <Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="friend@email.com" className="mt-1.5 h-10 rounded-xl border-border" type="email" />
+          </div>
+          <Button className="w-full h-10 rounded-xl shadow-travel font-semibold" onClick={handleInvite} disabled={!inviteEmail.trim()}>
+            Send Invite
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

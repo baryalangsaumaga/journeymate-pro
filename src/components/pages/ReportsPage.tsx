@@ -32,16 +32,28 @@ const backupHistory = [
 
 export default function ReportsPage() {
   const [generating, setGenerating] = useState<string | null>(null);
+  const [genProgress, setGenProgress] = useState(0);
   const [backingUp, setBackingUp] = useState(false);
   const [backupProgress, setBackupProgress] = useState(0);
+  const [autoSchedule, setAutoSchedule] = useState("12h");
+  const [downloadedFiles, setDownloadedFiles] = useState<string[]>([]);
 
   const generateReport = (reportId: string, format: string) => {
     setGenerating(reportId);
-    toast({ title: `Generating ${format} Report...`, description: "Your report will be ready shortly." });
-    setTimeout(() => {
-      setGenerating(null);
-      toast({ title: "Report Ready! 📄", description: `Your ${format} report is ready for download.` });
-    }, 2000);
+    setGenProgress(0);
+    toast({ title: `📄 Generating ${format} Report...`, description: "Your report will be ready shortly." });
+    const interval = setInterval(() => {
+      setGenProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          setGenerating(null);
+          setGenProgress(0);
+          toast({ title: "✅ Report Ready!", description: `Your ${format} report has been generated and is ready for download.` });
+          return 100;
+        }
+        return prev + 20;
+      });
+    }, 400);
   };
 
   const triggerBackup = () => {
@@ -52,12 +64,21 @@ export default function ReportsPage() {
         if (prev >= 100) {
           clearInterval(interval);
           setBackingUp(false);
-          toast({ title: "Backup Complete! ✅", description: "Database backed up successfully." });
+          toast({ title: "✅ Backup Complete!", description: "Database backed up successfully." });
           return 100;
         }
         return prev + 10;
       });
     }, 300);
+  };
+
+  const handleDownloadRecent = (name: string) => {
+    setDownloadedFiles(prev => [...prev, name]);
+    toast({ title: "📥 Downloaded!", description: `${name} saved to device.` });
+  };
+
+  const handlePrintRecent = (name: string) => {
+    toast({ title: "🖨️ Printing...", description: `Sending ${name} to printer.` });
   };
 
   return (
@@ -99,20 +120,11 @@ export default function ReportsPage() {
                             {fmt}
                           </Button>
                         ))}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-[10px] gap-1 rounded-lg font-semibold"
-                          disabled={generating === report.id}
-                          onClick={() => generateReport(report.id, "download")}
-                        >
-                          <Download className="w-3 h-3" /> Download
-                        </Button>
                       </div>
                       {generating === report.id && (
                         <div className="mt-2.5">
-                          <Progress value={65} className="h-1.5" />
-                          <p className="text-[9px] text-muted-foreground mt-1">Generating...</p>
+                          <Progress value={genProgress} className="h-1.5" />
+                          <p className="text-[9px] text-muted-foreground mt-1">{genProgress}% generating...</p>
                         </div>
                       )}
                     </div>
@@ -129,8 +141,8 @@ export default function ReportsPage() {
                 { name: "Manila Heritage Walk - Summary.pdf", date: "Mar 9, 2026", size: "1.2 MB" },
                 { name: "March Expenses.xlsx", date: "Mar 8, 2026", size: "340 KB" },
                 { name: "Itinerary - Tagaytay.pdf", date: "Mar 7, 2026", size: "890 KB" },
-              ].map((file, i) => (
-                <Card key={i} className="border-0 card-interactive">
+              ].map((file) => (
+                <Card key={file.name} className={`border-0 card-interactive ${downloadedFiles.includes(file.name) ? "opacity-60" : ""}`}>
                   <CardContent className="p-3.5 flex items-center gap-3">
                     <FileDown className="w-5 h-5 text-destructive flex-shrink-0" />
                     <div className="flex-1 min-w-0">
@@ -138,8 +150,12 @@ export default function ReportsPage() {
                       <p className="text-[10px] text-muted-foreground">{file.date} · {file.size}</p>
                     </div>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl"><Download className="w-3.5 h-3.5" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl"><Printer className="w-3.5 h-3.5" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => handleDownloadRecent(file.name)}>
+                        <Download className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => handlePrintRecent(file.name)}>
+                        <Printer className="w-3.5 h-3.5" />
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -166,7 +182,7 @@ export default function ReportsPage() {
                   {[
                     { label: "DB Size", value: "2.4 MB" },
                     { label: "Backups", value: "5" },
-                    { label: "Interval", value: "12h" },
+                    { label: "Interval", value: autoSchedule },
                   ].map(s => (
                     <div key={s.label} className="text-center p-2.5 bg-muted rounded-xl">
                       <p className="font-display font-bold text-sm">{s.value}</p>
@@ -203,18 +219,19 @@ export default function ReportsPage() {
                 <h4 className="font-semibold text-[13px] mb-2.5">Auto Backup Schedule</h4>
                 <div className="space-y-1.5">
                   {[
-                    { label: "Every 12 hours", active: true },
-                    { label: "Every 24 hours", active: false },
-                    { label: "Weekly", active: false },
+                    { label: "Every 12 hours", value: "12h" },
+                    { label: "Every 24 hours", value: "24h" },
+                    { label: "Weekly", value: "weekly" },
                   ].map(opt => (
                     <button
-                      key={opt.label}
+                      key={opt.value}
+                      onClick={() => { setAutoSchedule(opt.value); toast({ title: `⏰ Backup Schedule: ${opt.label}` }); }}
                       className={`w-full flex items-center justify-between p-3 rounded-xl text-xs font-medium transition-all tap-highlight ${
-                        opt.active ? "bg-primary/8 text-primary border border-primary/15" : "bg-muted text-muted-foreground"
+                        autoSchedule === opt.value ? "bg-primary/8 text-primary border border-primary/15" : "bg-muted text-muted-foreground"
                       }`}
                     >
                       <span>{opt.label}</span>
-                      {opt.active && <CheckCircle2 className="w-4 h-4" />}
+                      {autoSchedule === opt.value && <CheckCircle2 className="w-4 h-4" />}
                     </button>
                   ))}
                 </div>
