@@ -1,15 +1,18 @@
 import { useState, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   DollarSign, TrendingUp, TrendingDown, Users, PieChart, ArrowRightLeft,
   Plus, Filter, ChevronDown, Utensils, Car, Hotel, Ticket, ShoppingBag,
-  MoreHorizontal, Receipt, CircleDollarSign, ArrowRight, Check
+  MoreHorizontal, Receipt, CircleDollarSign, ArrowRight, Check, X
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { toast } from "@/hooks/use-toast";
 import { mockTrips, mockExpenses, mockBudget, currencyRates, currentUser, collaborators } from "@/data/mockData";
 import type { ExpenseCategory, Currency } from "@/types/travel";
 
@@ -35,11 +38,17 @@ const currencies: { code: Currency; symbol: string; name: string }[] = [
 const allUsers = [currentUser, ...collaborators];
 
 export default function ExpensesPage() {
-  const [displayCurrency, setDisplayCurrency] = useState<Currency>("PHP");
-  const [showConverter, setShowConverter] = useState(false);
+  const [displayCurrency] = useState<Currency>("PHP");
   const [convertAmount, setConvertAmount] = useState("1000");
   const [convertFrom, setConvertFrom] = useState<Currency>("PHP");
   const [convertTo, setConvertTo] = useState<Currency>("USD");
+  const [addOpen, setAddOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [newDesc, setNewDesc] = useState("");
+  const [newAmount, setNewAmount] = useState("");
+  const [newCategory, setNewCategory] = useState<ExpenseCategory>("food");
+  const [activeFilters, setActiveFilters] = useState<ExpenseCategory[]>([]);
+  const [settledIds, setSettledIds] = useState<number[]>([]);
 
   const trip = mockTrips[0];
   const budget = mockBudget;
@@ -49,14 +58,11 @@ export default function ExpensesPage() {
   const remaining = budget.totalBudget - totalSpent;
   const spentPercent = (totalSpent / budget.totalBudget) * 100;
 
-  // Calculate who owes whom
   const balances = useMemo(() => {
     const userTotals: Record<string, number> = {};
     expenses.forEach(exp => {
       const share = exp.amount / exp.splitAmong.length;
-      // Payer gets credit
       userTotals[exp.paidBy] = (userTotals[exp.paidBy] || 0) + exp.amount;
-      // Everyone owes their share
       exp.splitAmong.forEach(uid => {
         userTotals[uid] = (userTotals[uid] || 0) - share;
       });
@@ -64,11 +70,14 @@ export default function ExpensesPage() {
     return userTotals;
   }, [expenses]);
 
+  const filteredExpenses = activeFilters.length > 0
+    ? expenses.filter(e => activeFilters.includes(e.category))
+    : expenses;
+
   const convertCurrency = (amount: number, from: Currency, to: Currency) => {
     if (from === to) return amount;
     const rate = currencyRates.find(r => r.from === from && r.to === to);
     if (rate) return amount * rate.rate;
-    // Try reverse
     const reverse = currencyRates.find(r => r.from === to && r.to === from);
     if (reverse) return amount / reverse.rate;
     return amount;
@@ -79,18 +88,34 @@ export default function ExpensesPage() {
     return `${sym}${amount.toLocaleString(undefined, { minimumFractionDigits: amount < 10 ? 2 : 0, maximumFractionDigits: 2 })}`;
   };
 
+  const handleAddExpense = () => {
+    if (!newDesc.trim() || !newAmount) return;
+    toast({ title: "💰 Expense Added!", description: `${newDesc} — ${formatCurrency(parseFloat(newAmount))}` });
+    setNewDesc("");
+    setNewAmount("");
+    setAddOpen(false);
+  };
+
+  const handleSettle = (index: number) => {
+    setSettledIds(prev => [...prev, index]);
+    toast({ title: "✅ Settlement Recorded!", description: "Payment has been marked as complete." });
+  };
+
+  const toggleFilter = (cat: ExpenseCategory) => {
+    setActiveFilters(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]);
+  };
+
   const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
   const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="px-4 py-4 pb-6 space-y-4">
-      {/* Header */}
       <motion.div variants={item} className="flex items-center justify-between">
         <div>
           <h2 className="font-display font-bold text-xl tracking-tight">Expenses</h2>
           <p className="text-[11px] text-muted-foreground mt-0.5">{trip.title}</p>
         </div>
-        <Button size="sm" className="h-8 gap-1.5 rounded-xl shadow-travel text-xs font-semibold">
+        <Button size="sm" className="h-8 gap-1.5 rounded-xl shadow-travel text-xs font-semibold" onClick={() => setAddOpen(true)}>
           <Plus className="w-3.5 h-3.5" /> Add
         </Button>
       </motion.div>
@@ -105,7 +130,6 @@ export default function ExpensesPage() {
 
         {/* OVERVIEW TAB */}
         <TabsContent value="overview" className="space-y-4 mt-0">
-          {/* Budget Hero */}
           <motion.div variants={item}>
             <Card className="border-0 card-elevated overflow-hidden">
               <div className="h-1.5 bg-muted">
@@ -148,7 +172,6 @@ export default function ExpensesPage() {
             </Card>
           </motion.div>
 
-          {/* Category Breakdown */}
           <motion.div variants={item}>
             <h3 className="section-header mb-3">Budget by Category</h3>
             <div className="space-y-2.5">
@@ -160,7 +183,7 @@ export default function ExpensesPage() {
                   <Card key={cat.category} className="border-0 card-interactive">
                     <CardContent className="p-3.5">
                       <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0`}>
+                        <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
                           <Icon className={`w-4 h-4 ${config.color}`} />
                         </div>
                         <div className="flex-1 min-w-0">
@@ -193,12 +216,34 @@ export default function ExpensesPage() {
           <motion.div variants={item}>
             <div className="flex items-center justify-between mb-1">
               <h3 className="section-header">Recent Expenses</h3>
-              <Button variant="ghost" size="sm" className="h-7 text-[11px] gap-1 text-muted-foreground rounded-lg">
-                <Filter className="w-3 h-3" /> Filter
+              <Button variant="ghost" size="sm" className="h-7 text-[11px] gap-1 text-muted-foreground rounded-lg" onClick={() => setFilterOpen(!filterOpen)}>
+                <Filter className="w-3 h-3" /> Filter {activeFilters.length > 0 && `(${activeFilters.length})`}
               </Button>
             </div>
+            {filterOpen && (
+              <div className="flex gap-1.5 flex-wrap pb-2">
+                {Object.entries(categoryConfig).map(([key, config]) => (
+                  <button
+                    key={key}
+                    onClick={() => toggleFilter(key as ExpenseCategory)}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all ${
+                      activeFilters.includes(key as ExpenseCategory)
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    <config.icon className="w-3 h-3" /> {config.label}
+                  </button>
+                ))}
+                {activeFilters.length > 0 && (
+                  <button onClick={() => setActiveFilters([])} className="px-2.5 py-1.5 rounded-lg text-[10px] font-semibold bg-destructive/10 text-destructive">
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
           </motion.div>
-          {expenses.map((exp, i) => {
+          {filteredExpenses.map((exp) => {
             const config = categoryConfig[exp.category];
             const Icon = config.icon;
             const payer = allUsers.find(u => u.id === exp.paidBy);
@@ -206,7 +251,7 @@ export default function ExpensesPage() {
               <motion.div key={exp.id} variants={item}>
                 <Card className="border-0 card-interactive">
                   <CardContent className="p-3.5 flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl bg-muted flex items-center justify-center flex-shrink-0`}>
+                    <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
                       <Icon className={`w-4.5 h-4.5 ${config.color}`} />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -227,6 +272,11 @@ export default function ExpensesPage() {
               </motion.div>
             );
           })}
+          {filteredExpenses.length === 0 && (
+            <div className="py-12 text-center">
+              <p className="text-sm font-semibold text-muted-foreground">No expenses match filter</p>
+            </div>
+          )}
         </TabsContent>
 
         {/* SPLIT TAB */}
@@ -267,7 +317,6 @@ export default function ExpensesPage() {
             </Card>
           </motion.div>
 
-          {/* Suggested Settlements */}
           <motion.div variants={item}>
             <h3 className="section-header mb-3">Suggested Settlements</h3>
             <div className="space-y-2">
@@ -275,7 +324,7 @@ export default function ExpensesPage() {
                 { from: "Luna Park", to: "Alex Rivera", amount: 1580 },
                 { from: "Maya Chen", to: "Alex Rivera", amount: 720 },
               ].map((s, i) => (
-                <Card key={i} className="border-0 card-interactive">
+                <Card key={i} className={`border-0 card-interactive ${settledIds.includes(i) ? "opacity-50" : ""}`}>
                   <CardContent className="p-3.5 flex items-center gap-3">
                     <div className="flex items-center gap-2 flex-1">
                       <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center">
@@ -290,8 +339,13 @@ export default function ExpensesPage() {
                         <p className="text-[13px] font-bold">{formatCurrency(s.amount)}</p>
                       </div>
                     </div>
-                    <Button size="sm" className="h-7 text-[10px] rounded-lg gap-1">
-                      <Check className="w-3 h-3" /> Settle
+                    <Button
+                      size="sm"
+                      className="h-7 text-[10px] rounded-lg gap-1"
+                      disabled={settledIds.includes(i)}
+                      onClick={() => handleSettle(i)}
+                    >
+                      <Check className="w-3 h-3" /> {settledIds.includes(i) ? "Done" : "Settle"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -308,7 +362,6 @@ export default function ExpensesPage() {
                 <h3 className="section-header flex items-center gap-2">
                   <CircleDollarSign className="w-4 h-4 text-primary" /> Currency Converter
                 </h3>
-                {/* From */}
                 <div className="p-3.5 rounded-xl bg-muted">
                   <label className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">From</label>
                   <div className="flex items-center gap-2 mt-1.5">
@@ -327,8 +380,6 @@ export default function ExpensesPage() {
                     </select>
                   </div>
                 </div>
-
-                {/* Swap */}
                 <div className="flex justify-center -my-1">
                   <Button
                     variant="outline"
@@ -339,8 +390,6 @@ export default function ExpensesPage() {
                     <ArrowRightLeft className="w-4 h-4" />
                   </Button>
                 </div>
-
-                {/* To */}
                 <div className="p-3.5 rounded-xl bg-primary/5 border border-primary/10">
                   <label className="text-[10px] text-primary font-semibold uppercase tracking-wider">To</label>
                   <div className="flex items-center gap-2 mt-1.5">
@@ -356,8 +405,6 @@ export default function ExpensesPage() {
                     </select>
                   </div>
                 </div>
-
-                {/* Rate info */}
                 <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted text-[11px]">
                   <span className="text-muted-foreground">Exchange Rate</span>
                   <span className="font-semibold">
@@ -368,7 +415,6 @@ export default function ExpensesPage() {
             </Card>
           </motion.div>
 
-          {/* Quick Convert */}
           <motion.div variants={item}>
             <h3 className="section-header mb-3">Quick Reference</h3>
             <div className="grid grid-cols-2 gap-2">
@@ -386,6 +432,46 @@ export default function ExpensesPage() {
           </motion.div>
         </TabsContent>
       </Tabs>
+
+      {/* Add Expense Dialog */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-[340px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">Add Expense</DialogTitle>
+            <DialogDescription>Record a new expense</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Description</label>
+              <Input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="e.g. Lunch at Jollibee" className="mt-1.5 h-10 rounded-xl border-border" />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Amount (₱)</label>
+              <Input value={newAmount} onChange={e => setNewAmount(e.target.value)} type="number" placeholder="0.00" className="mt-1.5 h-10 rounded-xl border-border" />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Category</label>
+              <div className="grid grid-cols-3 gap-1.5 mt-1.5">
+                {Object.entries(categoryConfig).map(([key, config]) => (
+                  <button
+                    key={key}
+                    onClick={() => setNewCategory(key as ExpenseCategory)}
+                    className={`flex flex-col items-center gap-1 p-2.5 rounded-xl text-[10px] font-semibold transition-all ${
+                      newCategory === key ? "bg-primary/10 text-primary ring-1 ring-primary/30" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    <config.icon className="w-4 h-4" />
+                    {config.label.split(" ")[0]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <Button className="w-full h-10 rounded-xl shadow-travel font-semibold" onClick={handleAddExpense} disabled={!newDesc.trim() || !newAmount}>
+            <Plus className="w-4 h-4 mr-1" /> Add Expense
+          </Button>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }

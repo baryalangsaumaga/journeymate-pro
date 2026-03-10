@@ -1,14 +1,16 @@
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Search, MapPin, Star, Hotel, UtensilsCrossed, Mountain,
   Fuel, Eye, Landmark, SlidersHorizontal, Heart,
-  TrendingUp, Compass, ExternalLink, Share2, Clock, Navigation
+  TrendingUp, Compass, ExternalLink, Share2, Clock, Navigation, X
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { toast } from "@/hooks/use-toast";
 import { mockLocations } from "@/data/mockData";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
@@ -46,14 +48,44 @@ export default function ExplorePage() {
   const [activeCategory, setActiveCategory] = useState("all");
   const [favorites, setFavorites] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedPlace, setSelectedPlace] = useState<{ name: string; desc: string; rating: number } | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<"rating" | "distance" | "name">("rating");
 
-  const filteredLocations = mockLocations.filter(l =>
-    (activeCategory === "all" || l.type === activeCategory) &&
-    (!searchQuery || l.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredLocations = mockLocations
+    .filter(l =>
+      (activeCategory === "all" || l.type === activeCategory) &&
+      (!searchQuery || l.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    )
+    .sort((a, b) => {
+      if (sortBy === "rating") return b.rating - a.rating;
+      if (sortBy === "name") return a.name.localeCompare(b.name);
+      return 0;
+    });
 
-  const toggleFavorite = (id: string) => {
-    setFavorites(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]);
+  const toggleFavorite = (id: string, name: string) => {
+    const isFav = favorites.includes(id);
+    setFavorites(prev => isFav ? prev.filter(f => f !== id) : [...prev, id]);
+    toast({ title: isFav ? "💔 Removed from Favorites" : "❤️ Added to Favorites", description: name });
+  };
+
+  const handleBookExperience = (name: string) => {
+    toast({ title: "🎫 Booking Requested!", description: `We're processing your booking for ${name}.` });
+  };
+
+  const handleViewPlace = (name: string, desc: string, rating: number) => {
+    setSelectedPlace({ name, desc, rating });
+    setDetailOpen(true);
+  };
+
+  const handleNavigate = (name: string) => {
+    toast({ title: "🧭 Opening Navigation", description: `Getting directions to ${name}...` });
+  };
+
+  const handleShare = (name: string) => {
+    navigator.clipboard.writeText(`Check out ${name} on TrailSync!`);
+    toast({ title: "🔗 Link Copied!", description: `${name} link copied to clipboard.` });
   };
 
   return (
@@ -72,10 +104,27 @@ export default function ExplorePage() {
           placeholder="Search places, hotels, restaurants..."
           className="pl-10 h-11 border-0 bg-muted text-sm rounded-xl"
         />
-        <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-9 w-9 rounded-xl">
+        <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-9 w-9 rounded-xl" onClick={() => setFilterOpen(!filterOpen)}>
           <SlidersHorizontal className="w-4 h-4" />
         </Button>
       </motion.div>
+
+      {/* Sort Options */}
+      {filterOpen && (
+        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="flex gap-2">
+          {(["rating", "distance", "name"] as const).map(s => (
+            <button
+              key={s}
+              onClick={() => setSortBy(s)}
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold capitalize transition-all ${
+                sortBy === s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+              }`}
+            >
+              Sort by {s}
+            </button>
+          ))}
+        </motion.div>
+      )}
 
       {/* Categories */}
       <motion.div variants={item} className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
@@ -106,7 +155,7 @@ export default function ExplorePage() {
           </div>
           <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4">
             {experiences.map((exp, i) => (
-              <Card key={i} className="border-0 card-interactive min-w-[200px] flex-shrink-0">
+              <Card key={i} className="border-0 card-interactive min-w-[200px] flex-shrink-0 cursor-pointer" onClick={() => handleBookExperience(exp.name)}>
                 <CardContent className="p-3.5">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-3xl">{exp.image}</span>
@@ -142,7 +191,7 @@ export default function ExplorePage() {
           </div>
           <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4">
             {hotelRecommendations.map((hotel, i) => (
-              <Card key={i} className="border-0 card-interactive min-w-[170px] flex-shrink-0">
+              <Card key={i} className="border-0 card-interactive min-w-[170px] flex-shrink-0 cursor-pointer" onClick={() => handleViewPlace(hotel.name, `${hotel.type} · ${hotel.price}`, hotel.rating)}>
                 <CardContent className="p-3.5">
                   <div className="flex items-start justify-between">
                     <span className="text-2xl">{hotel.image}</span>
@@ -178,7 +227,7 @@ export default function ExplorePage() {
           </div>
           <div className="space-y-2">
             {foodRecommendations.map((food, i) => (
-              <Card key={i} className="border-0 card-interactive">
+              <Card key={i} className="border-0 card-interactive cursor-pointer" onClick={() => handleViewPlace(food.name, `${food.cuisine} · ${food.price}`, food.rating)}>
                 <CardContent className="p-3.5 flex items-center gap-3">
                   <span className="text-2xl">{food.image}</span>
                   <div className="flex-1 min-w-0">
@@ -222,7 +271,7 @@ export default function ExplorePage() {
 
         <div className="space-y-2">
           {filteredLocations.map(loc => (
-            <Card key={loc.id} className="border-0 card-interactive">
+            <Card key={loc.id} className="border-0 card-interactive cursor-pointer" onClick={() => handleViewPlace(loc.name, loc.description, loc.rating)}>
               <CardContent className="p-3.5 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-primary/8 flex items-center justify-center flex-shrink-0">
                   <MapPin className="w-5 h-5 text-primary" />
@@ -238,7 +287,7 @@ export default function ExplorePage() {
                   </div>
                   <Button
                     variant="ghost" size="icon" className="h-8 w-8 rounded-xl"
-                    onClick={() => toggleFavorite(loc.id)}
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite(loc.id, loc.name); }}
                   >
                     <Heart className={`w-4 h-4 transition-colors ${favorites.includes(loc.id) ? "fill-destructive text-destructive" : ""}`} />
                   </Button>
@@ -248,6 +297,34 @@ export default function ExplorePage() {
           ))}
         </div>
       </motion.div>
+
+      {/* Place Detail Dialog */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-[340px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">{selectedPlace?.name}</DialogTitle>
+            <DialogDescription>{selectedPlace?.desc}</DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-0.5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Star key={i} className={`w-4 h-4 ${i < Math.round(selectedPlace?.rating || 0) ? "text-accent fill-accent" : "text-muted"}`} />
+                ))}
+              </div>
+              <span className="text-sm font-semibold">{selectedPlace?.rating}</span>
+            </div>
+            <div className="flex gap-2">
+              <Button className="flex-1 h-10 rounded-xl font-semibold gap-1.5" onClick={() => { handleNavigate(selectedPlace?.name || ""); setDetailOpen(false); }}>
+                <Navigation className="w-4 h-4" /> Navigate
+              </Button>
+              <Button variant="outline" className="flex-1 h-10 rounded-xl font-semibold gap-1.5" onClick={() => { handleShare(selectedPlace?.name || ""); setDetailOpen(false); }}>
+                <Share2 className="w-4 h-4" /> Share
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }
