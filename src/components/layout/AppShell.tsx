@@ -283,18 +283,24 @@ export default function AppShell() {
                 ))}
               </div>
               <div className="p-4 space-y-2">
-                <div className="p-3 rounded-2xl bg-muted/50">
+                <button
+                  onClick={() => toast({ title: "📦 Offline Data", description: "24MB cached. Tap Settings → Storage to manage." })}
+                  className="w-full p-3 rounded-2xl bg-muted/50 text-left tap-highlight hover:bg-muted transition-colors"
+                >
                   <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                     <Download className="w-3.5 h-3.5" />
                     <span>Offline data: 24MB cached</span>
                   </div>
-                </div>
-                <div className="p-3 rounded-2xl bg-gradient-to-r from-primary/5 to-accent/5 border border-primary/10">
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); toast({ title: "✨ TrailSync Pro", description: "Unlock unlimited trips, offline maps, and AI planning." }); }}
+                  className="w-full p-3 rounded-2xl bg-gradient-to-r from-primary/5 to-accent/5 border border-primary/10 text-left tap-highlight hover:from-primary/10 hover:to-accent/10 transition-colors"
+                >
                   <div className="flex items-center gap-2 text-[11px]">
                     <Sparkles className="w-3.5 h-3.5 text-primary" />
                     <span className="font-medium">TrailSync Pro — Upgrade</span>
                   </div>
-                </div>
+                </button>
               </div>
             </motion.div>
           </>
