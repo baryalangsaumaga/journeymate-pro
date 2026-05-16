@@ -84,7 +84,7 @@ function TrackingMap() {
     };
   }, []);
 
-  return <div ref={mapRef} className="h-full w-full bg-muted" style={{ minHeight: 300 }} />;
+  return <div ref={mapRef} className="absolute inset-0 bg-muted" />;
 }
 
 export default function SocialPage() {
@@ -169,7 +169,7 @@ export default function SocialPage() {
           </TabsList>
         </div>
 
-        <TabsContent value="chat" className="flex-1 flex flex-col min-h-0 m-0">
+        <TabsContent value="chat" className="flex-1 hidden data-[state=active]:flex flex-col min-h-0 m-0">
           <div className="px-4 py-2.5 flex items-center justify-between border-b border-border/30">
             <div className="flex items-center gap-2.5">
               <div className="flex -space-x-1.5">
@@ -289,12 +289,10 @@ export default function SocialPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="tracking" className="flex-1 m-0 relative">
-          <div className="absolute inset-0 z-0">
-            <TrackingMap />
-          </div>
-          <div className="absolute bottom-4 left-4 right-4 z-[400]">
-            <Card className="border-0 card-elevated">
+        <TabsContent value="tracking" className="flex-1 m-0 relative overflow-hidden">
+          <TrackingMap />
+          <div className="absolute bottom-4 left-4 right-4 z-[400] pointer-events-none">
+            <Card className="border-0 card-elevated pointer-events-auto">
               <CardContent className="p-3.5">
                 <p className="text-xs font-semibold mb-2.5">Live Tracking · {collaborators.filter(c => c.isOnline).length} sharing</p>
                 <div className="flex gap-2 overflow-x-auto">
