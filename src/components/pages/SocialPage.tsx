@@ -84,7 +84,7 @@ function TrackingMap() {
     };
   }, []);
 
-  return <div ref={mapRef} className="h-full w-full bg-muted" style={{ minHeight: 300 }} />;
+  return <div ref={mapRef} className="absolute inset-0 bg-muted" />;
 }
 
 export default function SocialPage() {
