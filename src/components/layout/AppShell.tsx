@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/hooks/use-toast";
 import DashboardPage from "@/components/pages/DashboardPage";
 import ItineraryPage from "@/components/pages/ItineraryPage";
 import NavigationPage from "@/components/pages/NavigationPage";
