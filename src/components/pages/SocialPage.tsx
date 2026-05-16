@@ -31,14 +31,21 @@ function TrackingMap() {
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
 
+    const points = allUsers
+      .filter(u => u.lastLocation)
+      .map(u => [u.lastLocation!.lat, u.lastLocation!.lng] as [number, number]);
+
     const map = L.map(mapRef.current, {
-      center: [14.58, 121.0],
+      center: points[0] ?? [14.58, 121.0],
       zoom: 12,
       zoomControl: false,
       attributionControl: false,
     });
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png").addTo(map);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+      subdomains: "abcd",
+      maxZoom: 19,
+    }).addTo(map);
 
     allUsers.forEach(u => {
       if (!u.lastLocation) return;
@@ -49,15 +56,35 @@ function TrackingMap() {
         .addTo(map);
     });
 
+    if (points.length > 1) {
+      map.fitBounds(L.latLngBounds(points), { padding: [60, 60] });
+    }
+
     mapInstance.current = map;
 
+    // Fix sizing when mounted inside a tab/flex container
+    const invalidate = () => map.invalidateSize();
+    const t1 = setTimeout(invalidate, 50);
+    const t2 = setTimeout(invalidate, 250);
+    const t3 = setTimeout(invalidate, 600);
+    window.addEventListener("resize", invalidate);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && mapRef.current) {
+      ro = new ResizeObserver(invalidate);
+      ro.observe(mapRef.current);
+    }
+
     return () => {
+      clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
+      window.removeEventListener("resize", invalidate);
+      ro?.disconnect();
       map.remove();
       mapInstance.current = null;
     };
   }, []);
 
-  return <div ref={mapRef} className="h-full w-full" />;
+  return <div ref={mapRef} className="h-full w-full bg-muted" style={{ minHeight: 300 }} />;
 }
 
 export default function SocialPage() {
