@@ -289,25 +289,23 @@ export default function SocialPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="tracking" className="flex-1 m-0 relative data-[state=inactive]:hidden" forceMount>
-          <div className="absolute inset-0">
-            <TrackingMap />
-            <div className="absolute bottom-4 left-4 right-4 z-[400] pointer-events-none">
-              <Card className="border-0 card-elevated pointer-events-auto">
-                <CardContent className="p-3.5">
-                  <p className="text-xs font-semibold mb-2.5">Live Tracking · {collaborators.filter(c => c.isOnline).length} sharing</p>
-                  <div className="flex gap-2 overflow-x-auto">
-                    {allUsers.filter(u => u.isOnline).map(u => (
-                      <div key={u.id} className="flex items-center gap-1.5 bg-muted rounded-xl px-2.5 py-1.5 flex-shrink-0">
-                        <img src={u.avatar} className="w-5 h-5 rounded-lg" />
-                        <span className="text-[10px] font-semibold">{u.name.split(" ")[0]}</span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+        <TabsContent value="tracking" className="flex-1 m-0 relative overflow-hidden">
+          <TrackingMap />
+          <div className="absolute bottom-4 left-4 right-4 z-[400] pointer-events-none">
+            <Card className="border-0 card-elevated pointer-events-auto">
+              <CardContent className="p-3.5">
+                <p className="text-xs font-semibold mb-2.5">Live Tracking · {collaborators.filter(c => c.isOnline).length} sharing</p>
+                <div className="flex gap-2 overflow-x-auto">
+                  {allUsers.filter(u => u.isOnline).map(u => (
+                    <div key={u.id} className="flex items-center gap-1.5 bg-muted rounded-xl px-2.5 py-1.5 flex-shrink-0">
+                      <img src={u.avatar} className="w-5 h-5 rounded-lg" />
+                      <span className="text-[10px] font-semibold">{u.name.split(" ")[0]}</span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
       </Tabs>
