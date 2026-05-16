@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "@/hooks/use-toast";
 
 export interface Notification {
   id: string;
@@ -283,7 +284,7 @@ export default function NotificationDrawer({ open, onClose }: Props) {
                               <Button
                                 size="sm"
                                 className="h-6 text-[10px] mt-2 rounded-lg font-semibold px-3 gap-1"
-                                onClick={(e) => { e.stopPropagation(); }}
+                                onClick={(e) => { e.stopPropagation(); markRead(notification.id); toast({ title: notification.actionLabel, description: notification.title }); }}
                               >
                                 {notification.actionLabel}
                               </Button>
@@ -307,7 +308,11 @@ export default function NotificationDrawer({ open, onClose }: Props) {
 
             {/* Footer */}
             <div className="p-4 border-t border-border/30">
-              <Button variant="outline" className="w-full h-10 text-xs gap-2 rounded-xl font-semibold">
+              <Button
+                variant="outline"
+                className="w-full h-10 text-xs gap-2 rounded-xl font-semibold"
+                onClick={() => toast({ title: "⚙️ Notification Settings", description: "Manage preferences in Settings → Notifications." })}
+              >
                 <Settings className="w-3.5 h-3.5" /> Notification Settings
               </Button>
             </div>
