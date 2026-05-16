@@ -169,7 +169,7 @@ export default function SocialPage() {
           </TabsList>
         </div>
 
-        <TabsContent value="chat" className="flex-1 flex flex-col min-h-0 m-0">
+        <TabsContent value="chat" className="flex-1 hidden data-[state=active]:flex flex-col min-h-0 m-0">
           <div className="px-4 py-2.5 flex items-center justify-between border-b border-border/30">
             <div className="flex items-center gap-2.5">
               <div className="flex -space-x-1.5">
