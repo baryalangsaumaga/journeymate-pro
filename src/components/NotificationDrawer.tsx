@@ -284,7 +284,7 @@ export default function NotificationDrawer({ open, onClose }: Props) {
                               <Button
                                 size="sm"
                                 className="h-6 text-[10px] mt-2 rounded-lg font-semibold px-3 gap-1"
-                                onClick={(e) => { e.stopPropagation(); }}
+                                onClick={(e) => { e.stopPropagation(); markAsRead(notification.id); toast({ title: notification.actionLabel, description: notification.title }); }}
                               >
                                 {notification.actionLabel}
                               </Button>
