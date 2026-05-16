@@ -308,7 +308,11 @@ export default function NotificationDrawer({ open, onClose }: Props) {
 
             {/* Footer */}
             <div className="p-4 border-t border-border/30">
-              <Button variant="outline" className="w-full h-10 text-xs gap-2 rounded-xl font-semibold">
+              <Button
+                variant="outline"
+                className="w-full h-10 text-xs gap-2 rounded-xl font-semibold"
+                onClick={() => toast({ title: "⚙️ Notification Settings", description: "Manage preferences in Settings → Notifications." })}
+              >
                 <Settings className="w-3.5 h-3.5" /> Notification Settings
               </Button>
             </div>
