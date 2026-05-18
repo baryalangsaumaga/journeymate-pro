@@ -51,7 +51,7 @@ export const storage = {
 // Convenience repositories — same shape Cloud would expose.
 export const repo = {
   auth: {
-    get: () => read<{ name: string; email: string; avatar?: string; guest: boolean; provider?: string } | null>("auth", null),
+    get: () => read<any>("auth", null),
     set: (u: any) => write("auth", u),
     clear: () => storage.remove("auth"),
   },
