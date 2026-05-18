@@ -14,6 +14,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { languages } from "@/data/mockData";
+import { useTheme, type ThemeId } from "@/theme/ThemeProvider";
+import { useT } from "@/i18n/I18nProvider";
+import { useAuth } from "@/auth/AuthProvider";
+import type { Lang } from "@/i18n/translations";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
@@ -34,17 +38,18 @@ const socialProviders = [
 ];
 
 export default function SettingsPage() {
-  const [selectedTheme, setSelectedTheme] = useState("light");
-  const [selectedLang, setSelectedLang] = useState("en");
-  const [guestMode, setGuestMode] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const { lang, setLang, t } = useT();
+  const { user, signOut } = useAuth();
+  const [guestMode, setGuestMode] = useState(user?.guest ?? false);
   const [offlineMode, setOfflineMode] = useState(true);
   const [notifications, setNotifications] = useState(true);
   const [locationSharing, setLocationSharing] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
-  const [connectedProviders, setConnectedProviders] = useState<string[]>(["google"]);
-  const [editName, setEditName] = useState("Alex Rivera");
-  const [editEmail, setEditEmail] = useState("alex.rivera@email.com");
+  const [connectedProviders, setConnectedProviders] = useState<string[]>([user?.provider ?? "google"]);
+  const [editName, setEditName] = useState(user?.name ?? "Alex Rivera");
+  const [editEmail, setEditEmail] = useState(user?.email ?? "alex.rivera@email.com");
 
   const handleSaveProfile = () => {
     toast({ title: "✅ Profile Updated!", description: "Your changes have been saved." });
@@ -52,14 +57,14 @@ export default function SettingsPage() {
   };
 
   const handleThemeChange = (themeId: string) => {
-    setSelectedTheme(themeId);
-    toast({ title: `🎨 Theme: ${themes.find(t => t.id === themeId)?.label}`, description: "Theme preference saved." });
+    setTheme(themeId as ThemeId);
+    toast({ title: `🎨 Theme: ${themes.find(t => t.id === themeId)?.label}`, description: "Theme applied." });
   };
 
   const handleLangChange = (code: string) => {
-    setSelectedLang(code);
-    const lang = languages.find(l => l.code === code);
-    toast({ title: `🌐 Language: ${lang?.name}`, description: "Language preference saved." });
+    setLang(code as Lang);
+    const l = languages.find(x => x.code === code);
+    toast({ title: `🌐 ${l?.name}`, description: "Language switched." });
   };
 
   const toggleProvider = (id: string) => {
