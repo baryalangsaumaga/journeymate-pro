@@ -147,24 +147,24 @@ export default function SettingsPage() {
               <h4 className="font-semibold text-[13px]">Theme</h4>
             </div>
             <div className="grid grid-cols-5 gap-2">
-              {themes.map(theme => {
-                const Icon = theme.icon;
+              {themes.map(th => {
+                const Icon = th.icon;
                 return (
                   <button
-                    key={theme.id}
-                    onClick={() => handleThemeChange(theme.id)}
+                    key={th.id}
+                    onClick={() => handleThemeChange(th.id)}
                     className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl transition-all tap-highlight ${
-                      selectedTheme === theme.id ? "bg-primary/8 ring-2 ring-primary" : "bg-muted"
+                      theme === th.id ? "bg-primary/8 ring-2 ring-primary" : "bg-muted"
                     }`}
                   >
                     <div className="flex gap-0.5">
-                      {theme.colors.map((c, i) => (
+                      {th.colors.map((c, i) => (
                         <div key={i} className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: c }} />
                       ))}
                     </div>
                     <Icon className="w-3.5 h-3.5" />
-                    <span className="text-[9px] font-semibold">{theme.label}</span>
-                    {selectedTheme === theme.id && <Check className="w-3 h-3 text-primary" />}
+                    <span className="text-[9px] font-semibold">{th.label}</span>
+                    {theme === th.id && <Check className="w-3 h-3 text-primary" />}
                   </button>
                 );
               })}
@@ -183,17 +183,17 @@ export default function SettingsPage() {
               <Badge variant="outline" className="text-[9px] h-[18px] ml-auto font-semibold">{languages.length}</Badge>
             </div>
             <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto">
-              {languages.map(lang => (
+              {languages.map(l => (
                 <button
-                  key={lang.code}
-                  onClick={() => handleLangChange(lang.code)}
+                  key={l.code}
+                  onClick={() => handleLangChange(l.code)}
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs transition-all tap-highlight ${
-                    selectedLang === lang.code ? "bg-primary/8 text-primary ring-1 ring-primary/20 font-semibold" : "bg-muted text-foreground hover:bg-muted/80 font-medium"
+                    lang === l.code ? "bg-primary/8 text-primary ring-1 ring-primary/20 font-semibold" : "bg-muted text-foreground hover:bg-muted/80 font-medium"
                   }`}
                 >
-                  <span className="text-sm">{lang.flag}</span>
-                  <span>{lang.name}</span>
-                  {selectedLang === lang.code && <Check className="w-3 h-3 ml-auto" />}
+                  <span className="text-sm">{l.flag}</span>
+                  <span>{l.name}</span>
+                  {lang === l.code && <Check className="w-3 h-3 ml-auto" />}
                 </button>
               ))}
             </div>
