@@ -247,8 +247,8 @@ export default function AppShell() {
                     <User className="w-5 h-5 text-primary-foreground" />
                   </div>
                   <div>
-                    <p className="font-semibold text-sm">Alex Rivera</p>
-                    <p className="text-[10px] text-muted-foreground">Explorer Level 12 ✨</p>
+                    <p className="font-semibold text-sm">{user?.name || "Guest"}</p>
+                    <p className="text-[10px] text-muted-foreground">{user?.guest ? "Guest mode" : `Explorer · ${user?.provider ?? "email"}`}</p>
                   </div>
                 </div>
                 {/* XP Progress */}
@@ -311,12 +311,12 @@ export default function AppShell() {
                   </div>
                 </button>
                 <button
-                  onClick={() => { setMenuOpen(false); toast({ title: "✨ TrailSync Pro", description: "Unlock unlimited trips, offline maps, and AI planning." }); }}
-                  className="w-full p-3 rounded-2xl bg-gradient-to-r from-primary/5 to-accent/5 border border-primary/10 text-left tap-highlight hover:from-primary/10 hover:to-accent/10 transition-colors"
+                  onClick={() => { setMenuOpen(false); signOut(); toast({ title: "👋 Signed out" }); }}
+                  className="w-full p-3 rounded-2xl bg-destructive/5 border border-destructive/10 text-left tap-highlight hover:bg-destructive/10 transition-colors"
                 >
-                  <div className="flex items-center gap-2 text-[11px]">
-                    <Sparkles className="w-3.5 h-3.5 text-primary" />
-                    <span className="font-medium">TrailSync Pro — Upgrade</span>
+                  <div className="flex items-center gap-2 text-[11px] text-destructive font-semibold">
+                    <X className="w-3.5 h-3.5" />
+                    <span>Sign out</span>
                   </div>
                 </button>
               </div>
