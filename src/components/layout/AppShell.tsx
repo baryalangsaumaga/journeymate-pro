@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Map, Compass, Users, Star, FileText, Settings, Home, Navigation,
   Search, Bell, User, Menu, X, Wifi, WifiOff, Download, DollarSign,
-  Sparkles, Heart
+  Sparkles, Heart, Database
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import ReviewsPage from "@/components/pages/ReviewsPage";
 import ReportsPage from "@/components/pages/ReportsPage";
 import SettingsPage from "@/components/pages/SettingsPage";
 import ExpensesPage from "@/components/pages/ExpensesPage";
+import AdminPage from "@/components/pages/AdminPage";
 import NotificationDrawer, { mockNotifications } from "@/components/NotificationDrawer";
 import PullToRefresh from "@/components/PullToRefresh";
 import {
@@ -24,23 +25,10 @@ import {
   ExpensesSkeleton, SocialSkeleton, ReviewsSkeleton,
   MapSkeleton, SettingsSkeleton, ReportsSkeleton
 } from "@/components/SkeletonLoaders";
+import { useT } from "@/i18n/I18nProvider";
+import { useAuth } from "@/auth/AuthProvider";
 
-const tabs = [
-  { id: "home", label: "Home", icon: Home },
-  { id: "itinerary", label: "Trips", icon: Compass },
-  { id: "navigate", label: "Map", icon: Navigation },
-  { id: "social", label: "Social", icon: Users },
-  { id: "explore", label: "Explore", icon: Search },
-] as const;
-
-const menuItems = [
-  { id: "expenses", label: "Expenses", icon: DollarSign, badge: "New" },
-  { id: "reviews", label: "Reviews & Heatmap", icon: Star },
-  { id: "reports", label: "Reports & Backup", icon: FileText },
-  { id: "settings", label: "Settings", icon: Settings },
-];
-
-type TabId = typeof tabs[number]["id"] | "reviews" | "reports" | "settings" | "expenses";
+type TabId = "home" | "itinerary" | "navigate" | "social" | "explore" | "reviews" | "reports" | "settings" | "expenses" | "admin";
 
 const skeletonMap: Record<string, React.FC> = {
   home: DashboardSkeleton,
@@ -52,26 +40,43 @@ const skeletonMap: Record<string, React.FC> = {
   reviews: ReviewsSkeleton,
   reports: ReportsSkeleton,
   settings: SettingsSkeleton,
+  admin: SettingsSkeleton,
 };
 
 export default function AppShell() {
+  const { t } = useT();
+  const { user, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [isOffline] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  const tabs = [
+    { id: "home" as const, label: t("nav.home"), icon: Home },
+    { id: "itinerary" as const, label: t("nav.trips"), icon: Compass },
+    { id: "navigate" as const, label: t("nav.map"), icon: Navigation },
+    { id: "social" as const, label: t("nav.social"), icon: Users },
+    { id: "explore" as const, label: t("nav.explore"), icon: Search },
+  ];
+
+  const menuItems = [
+    { id: "expenses", label: t("menu.expenses"), icon: DollarSign, badge: "New" },
+    { id: "reviews", label: t("menu.reviews"), icon: Star },
+    { id: "reports", label: t("menu.reports"), icon: FileText },
+    { id: "admin", label: t("menu.admin"), icon: Database },
+    { id: "settings", label: t("menu.settings"), icon: Settings },
+  ];
+
   const unreadCount = mockNotifications.filter(n => !n.read).length;
 
   const navigate = useCallback((tab: string) => {
     setIsLoading(true);
     setActiveTab(tab as TabId);
-    // Simulate loading for native feel
     setTimeout(() => setIsLoading(false), 600);
   }, []);
 
   const handleRefresh = useCallback(async () => {
-    // Simulate refresh
     await new Promise(resolve => setTimeout(resolve, 1200));
   }, []);
 
@@ -79,6 +84,18 @@ export default function AppShell() {
     if (isLoading) {
       const Skeleton = skeletonMap[activeTab] || DashboardSkeleton;
       return <Skeleton />;
+    }
+    if (user?.guest && (activeTab === "admin" || activeTab === "reports")) {
+      return (
+        <div className="px-4 py-12 text-center">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-muted flex items-center justify-center mb-3">
+            <User className="w-7 h-7 text-muted-foreground" />
+          </div>
+          <h3 className="font-display font-bold text-base">Sign in required</h3>
+          <p className="text-[11px] text-muted-foreground mt-1 mb-4">Guest mode can't access this section.</p>
+          <Button onClick={() => signOut()} className="rounded-xl">Create account</Button>
+        </div>
+      );
     }
     switch (activeTab) {
       case "home": return <DashboardPage onNavigate={navigate} />;
@@ -90,6 +107,7 @@ export default function AppShell() {
       case "reviews": return <ReviewsPage />;
       case "reports": return <ReportsPage />;
       case "settings": return <SettingsPage />;
+      case "admin": return <AdminPage />;
       default: return <DashboardPage onNavigate={navigate} />;
     }
   };
@@ -107,7 +125,7 @@ export default function AppShell() {
           </div>
           <div>
             <h1 className="font-display font-bold text-[15px] text-foreground tracking-tight leading-none">TrailSync</h1>
-            <p className="text-[9px] text-muted-foreground leading-none mt-0.5">Travel Companion</p>
+            <p className="text-[9px] text-muted-foreground leading-none mt-0.5">{t("app.tagline")}</p>
           </div>
         </div>
         <div className="flex items-center gap-0.5">
