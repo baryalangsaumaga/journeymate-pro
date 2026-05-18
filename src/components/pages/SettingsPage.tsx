@@ -14,6 +14,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { languages } from "@/data/mockData";
+import { useTheme, type ThemeId } from "@/theme/ThemeProvider";
+import { useT } from "@/i18n/I18nProvider";
+import { useAuth } from "@/auth/AuthProvider";
+import type { Lang } from "@/i18n/translations";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
@@ -34,17 +38,18 @@ const socialProviders = [
 ];
 
 export default function SettingsPage() {
-  const [selectedTheme, setSelectedTheme] = useState("light");
-  const [selectedLang, setSelectedLang] = useState("en");
-  const [guestMode, setGuestMode] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const { lang, setLang, t } = useT();
+  const { user, signOut } = useAuth();
+  const [guestMode, setGuestMode] = useState(user?.guest ?? false);
   const [offlineMode, setOfflineMode] = useState(true);
   const [notifications, setNotifications] = useState(true);
   const [locationSharing, setLocationSharing] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
-  const [connectedProviders, setConnectedProviders] = useState<string[]>(["google"]);
-  const [editName, setEditName] = useState("Alex Rivera");
-  const [editEmail, setEditEmail] = useState("alex.rivera@email.com");
+  const [connectedProviders, setConnectedProviders] = useState<string[]>([user?.provider ?? "google"]);
+  const [editName, setEditName] = useState(user?.name ?? "Alex Rivera");
+  const [editEmail, setEditEmail] = useState(user?.email ?? "alex.rivera@email.com");
 
   const handleSaveProfile = () => {
     toast({ title: "✅ Profile Updated!", description: "Your changes have been saved." });
@@ -52,14 +57,14 @@ export default function SettingsPage() {
   };
 
   const handleThemeChange = (themeId: string) => {
-    setSelectedTheme(themeId);
-    toast({ title: `🎨 Theme: ${themes.find(t => t.id === themeId)?.label}`, description: "Theme preference saved." });
+    setTheme(themeId as ThemeId);
+    toast({ title: `🎨 Theme: ${themes.find(t => t.id === themeId)?.label}`, description: "Theme applied." });
   };
 
   const handleLangChange = (code: string) => {
-    setSelectedLang(code);
-    const lang = languages.find(l => l.code === code);
-    toast({ title: `🌐 Language: ${lang?.name}`, description: "Language preference saved." });
+    setLang(code as Lang);
+    const l = languages.find(x => x.code === code);
+    toast({ title: `🌐 ${l?.name}`, description: "Language switched." });
   };
 
   const toggleProvider = (id: string) => {
@@ -142,24 +147,24 @@ export default function SettingsPage() {
               <h4 className="font-semibold text-[13px]">Theme</h4>
             </div>
             <div className="grid grid-cols-5 gap-2">
-              {themes.map(theme => {
-                const Icon = theme.icon;
+              {themes.map(th => {
+                const Icon = th.icon;
                 return (
                   <button
-                    key={theme.id}
-                    onClick={() => handleThemeChange(theme.id)}
+                    key={th.id}
+                    onClick={() => handleThemeChange(th.id)}
                     className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl transition-all tap-highlight ${
-                      selectedTheme === theme.id ? "bg-primary/8 ring-2 ring-primary" : "bg-muted"
+                      theme === th.id ? "bg-primary/8 ring-2 ring-primary" : "bg-muted"
                     }`}
                   >
                     <div className="flex gap-0.5">
-                      {theme.colors.map((c, i) => (
+                      {th.colors.map((c, i) => (
                         <div key={i} className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: c }} />
                       ))}
                     </div>
                     <Icon className="w-3.5 h-3.5" />
-                    <span className="text-[9px] font-semibold">{theme.label}</span>
-                    {selectedTheme === theme.id && <Check className="w-3 h-3 text-primary" />}
+                    <span className="text-[9px] font-semibold">{th.label}</span>
+                    {theme === th.id && <Check className="w-3 h-3 text-primary" />}
                   </button>
                 );
               })}
@@ -178,17 +183,17 @@ export default function SettingsPage() {
               <Badge variant="outline" className="text-[9px] h-[18px] ml-auto font-semibold">{languages.length}</Badge>
             </div>
             <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto">
-              {languages.map(lang => (
+              {languages.map(l => (
                 <button
-                  key={lang.code}
-                  onClick={() => handleLangChange(lang.code)}
+                  key={l.code}
+                  onClick={() => handleLangChange(l.code)}
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs transition-all tap-highlight ${
-                    selectedLang === lang.code ? "bg-primary/8 text-primary ring-1 ring-primary/20 font-semibold" : "bg-muted text-foreground hover:bg-muted/80 font-medium"
+                    lang === l.code ? "bg-primary/8 text-primary ring-1 ring-primary/20 font-semibold" : "bg-muted text-foreground hover:bg-muted/80 font-medium"
                   }`}
                 >
-                  <span className="text-sm">{lang.flag}</span>
-                  <span>{lang.name}</span>
-                  {selectedLang === lang.code && <Check className="w-3 h-3 ml-auto" />}
+                  <span className="text-sm">{l.flag}</span>
+                  <span>{l.name}</span>
+                  {lang === l.code && <Check className="w-3 h-3 ml-auto" />}
                 </button>
               ))}
             </div>

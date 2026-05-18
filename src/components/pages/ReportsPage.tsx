@@ -11,6 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
+import { generatePDF, downloadCSV, downloadJSON } from "@/lib/pdf";
+import { storage, repo } from "@/lib/storage";
+import { mockTrips, mockExpenses } from "@/data/mockData";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
@@ -41,19 +44,55 @@ export default function ReportsPage() {
   const generateReport = (reportId: string, format: string) => {
     setGenerating(reportId);
     setGenProgress(0);
-    toast({ title: `📄 Generating ${format} Report...`, description: "Your report will be ready shortly." });
+    toast({ title: `📄 Generating ${format}...`, description: "Building your report." });
     const interval = setInterval(() => {
       setGenProgress(prev => {
         if (prev >= 100) {
           clearInterval(interval);
+          // Actually emit a file based on format.
+          const trip = mockTrips[0];
+          const baseName = `${reportId}-${new Date().toISOString().slice(0, 10)}`;
+          if (format === "PDF") {
+            const doc = generatePDF({
+              title: reportId === "trip-summary" ? `Trip Summary — ${trip.title}`
+                   : reportId === "expense" ? `Expense Report — ${trip.title}`
+                   : reportId === "itinerary" ? `Itinerary — ${trip.title}`
+                   : "Travel Analytics",
+              subtitle: `${trip.startDate} → ${trip.endDate}`,
+              sections: reportId === "expense" ? [{
+                title: "Expenses",
+                rows: mockExpenses.map(e => [e.description, `${e.currency} ${e.amount.toLocaleString()} (${e.category})`]),
+              }, {
+                title: "Summary",
+                rows: [["Total", `PHP ${mockExpenses.reduce((a, e) => a + e.amount, 0).toLocaleString()}`], ["Entries", String(mockExpenses.length)]],
+              }] : reportId === "itinerary" ? [{
+                title: "Stops",
+                rows: trip.stops.map(s => [`${s.arrivalTime} · ${s.location.name}`, `${s.transitType} · ${s.notes}`]),
+              }] : [{
+                title: "Overview",
+                rows: [["Trip", trip.title], ["Stops", String(trip.stops.length)], ["Collaborators", String(trip.collaborators.length)], ["Status", trip.status]],
+              }, {
+                title: "Highlights",
+                rows: trip.stops.map(s => [s.location.name, s.notes]),
+              }],
+            });
+            doc.save(`${baseName}.pdf`);
+          } else if (format === "Excel" || format === "CSV") {
+            const rows: string[][] = reportId === "expense"
+              ? [["Description", "Amount", "Currency", "Category", "Date"], ...mockExpenses.map(e => [e.description, String(e.amount), e.currency, e.category, e.date])]
+              : [["Stop", "Time", "Transit", "Notes"], ...trip.stops.map(s => [s.location.name, s.arrivalTime, s.transitType, s.notes])];
+            downloadCSV(`${baseName}.${format === "Excel" ? "csv" : "csv"}`, rows);
+          } else if (format === "Print") {
+            window.print();
+          }
           setGenerating(null);
           setGenProgress(0);
-          toast({ title: "✅ Report Ready!", description: `Your ${format} report has been generated and is ready for download.` });
+          toast({ title: "✅ Report Ready!", description: `${format} saved to your device.` });
           return 100;
         }
-        return prev + 20;
+        return prev + 25;
       });
-    }, 400);
+    }, 200);
   };
 
   const triggerBackup = () => {
@@ -63,22 +102,29 @@ export default function ReportsPage() {
       setBackupProgress(prev => {
         if (prev >= 100) {
           clearInterval(interval);
+          const payload = storage.exportAll();
+          const sizeKB = (JSON.stringify(payload).length / 1024).toFixed(1);
+          const entry = { id: `b-${Date.now()}`, date: new Date().toLocaleString(), type: "Manual", size: `${sizeKB} KB`, status: "success" };
+          repo.backups.add(entry);
+          downloadJSON(`trailsync-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
           setBackingUp(false);
-          toast({ title: "✅ Backup Complete!", description: "Database backed up successfully." });
+          toast({ title: "✅ Backup Complete!", description: `${sizeKB} KB exported and downloaded.` });
           return 100;
         }
-        return prev + 10;
+        return prev + 20;
       });
-    }, 300);
+    }, 150);
   };
 
   const handleDownloadRecent = (name: string) => {
     setDownloadedFiles(prev => [...prev, name]);
-    toast({ title: "📥 Downloaded!", description: `${name} saved to device.` });
+    const doc = generatePDF({ title: name.replace(/\.[a-z]+$/, ""), sections: [{ title: "Note", rows: [["Source", "Recent reports cache"]] }] });
+    doc.save(name.endsWith(".pdf") ? name : `${name}.pdf`);
+    toast({ title: "📥 Downloaded!", description: `${name} saved.` });
   };
 
-  const handlePrintRecent = (name: string) => {
-    toast({ title: "🖨️ Printing...", description: `Sending ${name} to printer.` });
+  const handlePrintRecent = (_name: string) => {
+    window.print();
   };
 
   return (
