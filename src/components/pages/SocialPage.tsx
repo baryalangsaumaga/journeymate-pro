@@ -26,6 +26,9 @@ const createUserIcon = (name: string, online: boolean) => L.divIcon({
 function TrackingMap() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
+  const markersRef = useRef<Record<string, L.Marker>>({});
+  const trailsRef = useRef<Record<string, L.Polyline>>({});
+  const positionsRef = useRef<Record<string, [number, number][]>>({});
   const allUsers = [currentUser, ...collaborators.filter(c => c.lastLocation)];
 
   useEffect(() => {
@@ -49,11 +52,19 @@ function TrackingMap() {
 
     allUsers.forEach(u => {
       if (!u.lastLocation) return;
-      L.marker([u.lastLocation.lat, u.lastLocation.lng], {
-        icon: createUserIcon(u.name, u.isOnline),
-      })
+      const start: [number, number] = [u.lastLocation.lat, u.lastLocation.lng];
+      positionsRef.current[u.id] = [start];
+      const marker = L.marker(start, { icon: createUserIcon(u.name, u.isOnline) })
         .bindPopup(`<strong>${u.name}</strong><br/><span style="color:${u.isOnline ? '#22c55e' : '#94a3b8'}">${u.isOnline ? "Online" : "Offline"}</span><br/><small>${u.role}</small>`)
         .addTo(map);
+      markersRef.current[u.id] = marker;
+
+      if (u.isOnline) {
+        const trail = L.polyline([start], {
+          color: "hsl(162,72%,40%)", weight: 3, opacity: 0.5, dashArray: "4 4",
+        }).addTo(map);
+        trailsRef.current[u.id] = trail;
+      }
     });
 
     if (points.length > 1) {
@@ -62,7 +73,29 @@ function TrackingMap() {
 
     mapInstance.current = map;
 
-    // Fix sizing when mounted inside a tab/flex container
+    // Simulate real-time movement for online users
+    const moveInterval = setInterval(() => {
+      allUsers.forEach(u => {
+        if (!u.isOnline) return;
+        const marker = markersRef.current[u.id];
+        if (!marker) return;
+        const current = marker.getLatLng();
+        // Small random walk (~30-50m per tick)
+        const next: [number, number] = [
+          current.lat + (Math.random() - 0.5) * 0.0008,
+          current.lng + (Math.random() - 0.5) * 0.0008,
+        ];
+        marker.setLatLng(next);
+        const trail = trailsRef.current[u.id];
+        if (trail) {
+          const pts = positionsRef.current[u.id];
+          pts.push(next);
+          if (pts.length > 30) pts.shift();
+          trail.setLatLngs(pts);
+        }
+      });
+    }, 1500);
+
     const invalidate = () => map.invalidateSize();
     const t1 = setTimeout(invalidate, 50);
     const t2 = setTimeout(invalidate, 250);
@@ -76,11 +109,15 @@ function TrackingMap() {
     }
 
     return () => {
+      clearInterval(moveInterval);
       clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
       window.removeEventListener("resize", invalidate);
       ro?.disconnect();
       map.remove();
       mapInstance.current = null;
+      markersRef.current = {};
+      trailsRef.current = {};
+      positionsRef.current = {};
     };
   }, []);
 
