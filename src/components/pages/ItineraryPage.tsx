@@ -33,6 +33,7 @@ export default function ItineraryPage() {
   const [view, setView] = useState<"list" | "detail">("list");
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "planning" | "completed">("all");
   const [newTripOpen, setNewTripOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState<DetailTab>("timeline");
   const [addStopOpen, setAddStopOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
