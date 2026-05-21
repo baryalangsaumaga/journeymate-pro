@@ -467,47 +467,18 @@ export default function ItineraryPage() {
 
       {/* New Trip Dialog */}
       <Dialog open={newTripOpen} onOpenChange={setNewTripOpen}>
-        <DialogContent className="max-w-[340px] rounded-2xl">
+        <DialogContent className="max-w-[380px] rounded-2xl">
           <DialogHeader>
             <DialogTitle className="font-display">Create New Trip</DialogTitle>
-            <DialogDescription>Plan your next adventure</DialogDescription>
+            <DialogDescription>4-step wizard · plan your next adventure</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Trip Name</label>
-              <Input value={newTripName} onChange={e => setNewTripName(e.target.value)} placeholder="e.g. Bali Beach Getaway" className="mt-1.5 h-10 rounded-xl border-border" />
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Description</label>
-              <Input value={newTripDesc} onChange={e => setNewTripDesc(e.target.value)} placeholder="A brief description..." className="mt-1.5 h-10 rounded-xl border-border" />
-            </div>
-          </div>
-          <Button className="w-full h-10 rounded-xl shadow-travel font-semibold" onClick={handleCreateTrip} disabled={!newTripName.trim()}>
-            Create Trip
-          </Button>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Stop Dialog */}
-      <Dialog open={addStopOpen} onOpenChange={setAddStopOpen}>
-        <DialogContent className="max-w-[340px] rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-display">Add Stop</DialogTitle>
-            <DialogDescription>Add a new stop to your itinerary</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Location Name</label>
-              <Input value={newStopName} onChange={e => setNewStopName(e.target.value)} placeholder="e.g. Tagaytay Picnic Grove" className="mt-1.5 h-10 rounded-xl border-border" />
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Notes</label>
-              <Input value={newStopNotes} onChange={e => setNewStopNotes(e.target.value)} placeholder="What to do here..." className="mt-1.5 h-10 rounded-xl border-border" />
-            </div>
-          </div>
-          <Button className="w-full h-10 rounded-xl shadow-travel font-semibold" onClick={handleAddStop} disabled={!newStopName.trim()}>
-            <Plus className="w-4 h-4 mr-1" /> Add Stop
-          </Button>
+          <TripWizard
+            onCancel={() => setNewTripOpen(false)}
+            onComplete={(t) => {
+              toast({ title: "✈️ Trip Created!", description: `"${t.title}" added with ${t.destinations.length} stops.` });
+              setNewTripOpen(false);
+            }}
+          />
         </DialogContent>
       </Dialog>
 
