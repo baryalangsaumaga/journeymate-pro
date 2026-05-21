@@ -34,14 +34,9 @@ export default function ItineraryPage() {
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "planning" | "completed">("all");
   const [newTripOpen, setNewTripOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("timeline");
-  const [addStopOpen, setAddStopOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [newTripName, setNewTripName] = useState("");
-  const [newTripDesc, setNewTripDesc] = useState("");
-  const [newStopName, setNewStopName] = useState("");
-  const [newStopNotes, setNewStopNotes] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
@@ -51,21 +46,6 @@ export default function ItineraryPage() {
 
   const filteredTrips = trips.filter(t => activeFilter === "all" || t.status === activeFilter);
 
-  const handleCreateTrip = () => {
-    if (!newTripName.trim()) return;
-    toast({ title: "✈️ Trip Created!", description: `"${newTripName}" has been added to your trips.` });
-    setNewTripName("");
-    setNewTripDesc("");
-    setNewTripOpen(false);
-  };
-
-  const handleAddStop = () => {
-    if (!newStopName.trim()) return;
-    toast({ title: "📍 Stop Added!", description: `"${newStopName}" added to ${selectedTrip.title}.` });
-    setNewStopName("");
-    setNewStopNotes("");
-    setAddStopOpen(false);
-  };
 
   const handleDeleteTrip = () => {
     setTrips(prev => prev.filter(t => t.id !== selectedTrip.id));
