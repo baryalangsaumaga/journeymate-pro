@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  MapPin, Clock, CheckCircle2, Circle, Plus, Download, Share2,
-  Car, Bus, Train, Plane, Ship, Bike, Footprints, CalendarDays,
-  Users, MoreVertical, ChevronLeft, Edit3, Copy, Trash2,
-  AlertCircle, Navigation, X
+  MapPin, Plus, Download, Share2, CalendarDays,
+  Users, ChevronLeft, Edit3, Copy, Trash2,
+  AlertCircle, Navigation, ListChecks, Route as RouteIcon, Sparkles,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,15 +13,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { mockTrips } from "@/data/mockData";
-import type { TransitType, WeatherCondition, Trip } from "@/types/travel";
+import type { Trip } from "@/types/travel";
 import { generatePDF, downloadJSON } from "@/lib/pdf";
 import { repo } from "@/lib/storage";
-
-const transitIcons: Record<TransitType, typeof Car> = { car: Car, bus: Bus, train: Train, plane: Plane, ferry: Ship, bike: Bike, walk: Footprints };
-const weatherIcons: Record<WeatherCondition, string> = { sunny: "☀️", cloudy: "⛅", rainy: "🌧️", stormy: "⛈️", snowy: "❄️", foggy: "🌫️", windy: "💨" };
+import { ItineraryTimeline } from "@/components/travel/ItineraryTimeline";
+import { TripWizard } from "@/components/travel/TripWizard";
+import { RoutePlannerPanel } from "@/components/travel/RoutePlannerPanel";
+import { AutoItineraryPanel } from "@/components/travel/AutoItineraryPanel";
+import { WeatherWidget } from "@/components/travel/WeatherWidget";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
+
+type DetailTab = "timeline" | "plan" | "auto";
 
 export default function ItineraryPage() {
   const [trips, setTrips] = useState<Trip[]>(mockTrips);
@@ -30,14 +33,10 @@ export default function ItineraryPage() {
   const [view, setView] = useState<"list" | "detail">("list");
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "planning" | "completed">("all");
   const [newTripOpen, setNewTripOpen] = useState(false);
-  const [addStopOpen, setAddStopOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState<DetailTab>("timeline");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [newTripName, setNewTripName] = useState("");
-  const [newTripDesc, setNewTripDesc] = useState("");
-  const [newStopName, setNewStopName] = useState("");
-  const [newStopNotes, setNewStopNotes] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
@@ -47,21 +46,6 @@ export default function ItineraryPage() {
 
   const filteredTrips = trips.filter(t => activeFilter === "all" || t.status === activeFilter);
 
-  const handleCreateTrip = () => {
-    if (!newTripName.trim()) return;
-    toast({ title: "✈️ Trip Created!", description: `"${newTripName}" has been added to your trips.` });
-    setNewTripName("");
-    setNewTripDesc("");
-    setNewTripOpen(false);
-  };
-
-  const handleAddStop = () => {
-    if (!newStopName.trim()) return;
-    toast({ title: "📍 Stop Added!", description: `"${newStopName}" added to ${selectedTrip.title}.` });
-    setNewStopName("");
-    setNewStopNotes("");
-    setAddStopOpen(false);
-  };
 
   const handleDeleteTrip = () => {
     setTrips(prev => prev.filter(t => t.id !== selectedTrip.id));
@@ -341,71 +325,71 @@ export default function ItineraryPage() {
               ))}
             </motion.div>
 
-            {/* Timeline */}
-            <motion.div variants={item}>
-              <h3 className="section-header mb-3">Itinerary</h3>
-              <div className="space-y-0">
-                {selectedTrip.stops.map((stop, idx) => {
-                  const TransitIcon = transitIcons[stop.transitType];
-                  const isNext = !stop.isCompleted && (idx === 0 || selectedTrip.stops[idx - 1].isCompleted);
-                  return (
-                    <div key={stop.id} className="flex gap-3">
-                      <div className="flex flex-col items-center">
-                        <button
-                          onClick={() => handleToggleStop(stop.id)}
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
-                            stop.isCompleted
-                              ? "bg-success text-success-foreground shadow-sm"
-                              : isNext
-                                ? "bg-primary text-primary-foreground shadow-travel"
-                                : "bg-muted text-muted-foreground hover:bg-muted/80"
-                          }`}
-                        >
-                          {stop.isCompleted ? <CheckCircle2 className="w-4.5 h-4.5" /> : isNext ? <Navigation className="w-4 h-4" /> : <Circle className="w-4.5 h-4.5" />}
-                        </button>
-                        {idx < selectedTrip.stops.length - 1 && (
-                          <div className={`w-0.5 h-16 my-0.5 rounded-full ${stop.isCompleted ? "bg-success" : "bg-border"}`} />
-                        )}
-                      </div>
-                      <Card className={`flex-1 border-0 mb-3 ${isNext ? "card-elevated ring-1 ring-primary/20" : "card-interactive"}`}>
-                        <CardContent className="p-3.5">
-                          {isNext && (
-                            <Badge className="text-[8px] h-[16px] bg-primary/10 text-primary font-bold border-0 mb-1.5">NEXT STOP</Badge>
-                          )}
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-[13px]">{stop.location.name}</h4>
-                              <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">{stop.notes}</p>
-                            </div>
-                            <div className="flex items-center gap-1 ml-2">
-                              {stop.weather && <span className="text-sm">{weatherIcons[stop.weather]}</span>}
-                              {stop.temperature && <span className="text-xs font-semibold">{stop.temperature}°</span>}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 mt-2.5">
-                            <Badge variant="outline" className="text-[9px] h-5 gap-1 font-medium">
-                              <Clock className="w-2.5 h-2.5" />
-                              {stop.arrivalTime} - {stop.departureTime}
-                            </Badge>
-                            <Badge variant="outline" className="text-[9px] h-5 gap-1 font-medium capitalize">
-                              <TransitIcon className="w-2.5 h-2.5" />
-                              {stop.transitType}
-                            </Badge>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-                  );
-                })}
-              </div>
+            {/* Weather at first stop */}
+            {selectedTrip.stops[0] && (
+              <motion.div variants={item}>
+                <WeatherWidget
+                  lat={selectedTrip.stops[0].location.lat}
+                  lng={selectedTrip.stops[0].location.lng}
+                  variant="full"
+                />
+              </motion.div>
+            )}
+
+            {/* Tab Switcher: Timeline / Plan / Auto */}
+            <motion.div variants={item} className="flex gap-1 p-1 rounded-2xl bg-muted">
+              {([
+                { id: "timeline" as const, label: "Timeline", icon: ListChecks },
+                { id: "plan" as const, label: "Planner", icon: RouteIcon },
+                { id: "auto" as const, label: "Auto", icon: Sparkles },
+              ]).map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setDetailTab(id)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-semibold transition-all ${
+                    detailTab === id ? "bg-card text-primary shadow-sm" : "text-muted-foreground"
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" /> {label}
+                </button>
+              ))}
             </motion.div>
 
-            {/* Add Stop */}
             <motion.div variants={item}>
-              <Button variant="outline" className="w-full h-11 rounded-2xl border-dashed border-2 border-border text-muted-foreground gap-2 font-semibold text-xs" onClick={() => setAddStopOpen(true)}>
-                <Plus className="w-4 h-4" /> Add Stop to Itinerary
-              </Button>
+              <AnimatePresence mode="wait">
+                {detailTab === "timeline" && (
+                  <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                    <ItineraryTimeline stops={selectedTrip.stops} onToggle={handleToggleStop} />
+                  </motion.div>
+                )}
+                {detailTab === "plan" && (
+                  <motion.div key="plan" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                    <RoutePlannerPanel
+                      initial={selectedTrip.stops.map(s => ({
+                        id: s.id, location: s.location, transitType: s.transitType, notes: s.notes,
+                      }))}
+                    />
+                  </motion.div>
+                )}
+                {detailTab === "auto" && (
+                  <motion.div key="auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                    <AutoItineraryPanel
+                      centerLat={selectedTrip.stops[0]?.location.lat}
+                      centerLng={selectedTrip.stops[0]?.location.lng}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
+
+            {/* Add Stop — handled inside the Planner tab now */}
+            {detailTab === "timeline" && (
+              <motion.div variants={item}>
+                <Button variant="outline" className="w-full h-11 rounded-2xl border-dashed border-2 border-border text-muted-foreground gap-2 font-semibold text-xs" onClick={() => setDetailTab("plan")}>
+                  <Plus className="w-4 h-4" /> Add stops in Planner
+                </Button>
+              </motion.div>
+            )}
 
             {/* Collaborators */}
             <motion.div variants={item}>
@@ -465,47 +449,18 @@ export default function ItineraryPage() {
 
       {/* New Trip Dialog */}
       <Dialog open={newTripOpen} onOpenChange={setNewTripOpen}>
-        <DialogContent className="max-w-[340px] rounded-2xl">
+        <DialogContent className="max-w-[380px] rounded-2xl">
           <DialogHeader>
             <DialogTitle className="font-display">Create New Trip</DialogTitle>
-            <DialogDescription>Plan your next adventure</DialogDescription>
+            <DialogDescription>4-step wizard · plan your next adventure</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Trip Name</label>
-              <Input value={newTripName} onChange={e => setNewTripName(e.target.value)} placeholder="e.g. Bali Beach Getaway" className="mt-1.5 h-10 rounded-xl border-border" />
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Description</label>
-              <Input value={newTripDesc} onChange={e => setNewTripDesc(e.target.value)} placeholder="A brief description..." className="mt-1.5 h-10 rounded-xl border-border" />
-            </div>
-          </div>
-          <Button className="w-full h-10 rounded-xl shadow-travel font-semibold" onClick={handleCreateTrip} disabled={!newTripName.trim()}>
-            Create Trip
-          </Button>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Stop Dialog */}
-      <Dialog open={addStopOpen} onOpenChange={setAddStopOpen}>
-        <DialogContent className="max-w-[340px] rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-display">Add Stop</DialogTitle>
-            <DialogDescription>Add a new stop to your itinerary</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Location Name</label>
-              <Input value={newStopName} onChange={e => setNewStopName(e.target.value)} placeholder="e.g. Tagaytay Picnic Grove" className="mt-1.5 h-10 rounded-xl border-border" />
-            </div>
-            <div>
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Notes</label>
-              <Input value={newStopNotes} onChange={e => setNewStopNotes(e.target.value)} placeholder="What to do here..." className="mt-1.5 h-10 rounded-xl border-border" />
-            </div>
-          </div>
-          <Button className="w-full h-10 rounded-xl shadow-travel font-semibold" onClick={handleAddStop} disabled={!newStopName.trim()}>
-            <Plus className="w-4 h-4 mr-1" /> Add Stop
-          </Button>
+          <TripWizard
+            onCancel={() => setNewTripOpen(false)}
+            onComplete={(t) => {
+              toast({ title: "✈️ Trip Created!", description: `"${t.title}" added with ${t.destinations.length} stops.` });
+              setNewTripOpen(false);
+            }}
+          />
         </DialogContent>
       </Dialog>
 

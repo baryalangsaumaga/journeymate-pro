@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Navigation, Car, Bus, Footprints, Bike,
   Fuel, AlertTriangle, ArrowRight, ArrowLeft, ArrowUp, CornerUpRight, CornerUpLeft, Flag,
-  Gauge, Route, Layers, Locate, Volume2, VolumeX,
+  Gauge, Route, Locate, Volume2, VolumeX,
   Search, Loader2
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +15,8 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { mockLocations } from "@/data/mockData";
 import { fetchRoute, formatDistance, formatDuration, RouteResult, RouteStep } from "@/lib/routing";
+import { RouteDetailsPanel } from "@/components/travel/RouteDetailsPanel";
+import { MapLayerSwitcher, type MapStyle } from "@/components/travel/MapLayerSwitcher";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -60,7 +62,7 @@ export default function NavigationPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [mapStyle, setMapStyle] = useState<"voyager" | "dark" | "light">("voyager");
+  const [mapStyle, setMapStyle] = useState<MapStyle>("voyager");
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
@@ -218,12 +220,6 @@ export default function NavigationPage() {
     toast({ title: "📍 Centered on Your Location" });
   };
 
-  const handleLayerSwitch = () => {
-    const styles: ("voyager" | "dark" | "light")[] = ["voyager", "dark", "light"];
-    const next = styles[(styles.indexOf(mapStyle) + 1) % styles.length];
-    setMapStyle(next);
-    toast({ title: `🗺️ Map Style: ${next}` });
-  };
 
   const handleStartNav = () => {
     if (!route) return;
@@ -245,12 +241,14 @@ export default function NavigationPage() {
     <div className="relative h-[calc(100dvh-7rem)]">
       <div className="absolute inset-0 z-0" ref={mapRef} />
 
-      <div className="absolute top-4 right-4 flex flex-col gap-2 z-[400]">
-        <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLayerSwitch}><Layers className="w-4 h-4" /></Button>
-        <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLocate}><Locate className="w-4 h-4" /></Button>
-        <Button variant="outline" size="icon" className={`h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50 ${isMuted ? "text-muted-foreground" : ""}`} onClick={() => { setIsMuted(!isMuted); toast({ title: isMuted ? "🔊 Voice On" : "🔇 Voice Off" }); }}>
-          {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-        </Button>
+      <div className="absolute top-4 right-4 flex flex-col items-end gap-2 z-[400]">
+        <MapLayerSwitcher value={mapStyle} onChange={setMapStyle} />
+        <div className="flex flex-col gap-2">
+          <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLocate}><Locate className="w-4 h-4" /></Button>
+          <Button variant="outline" size="icon" className={`h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50 ${isMuted ? "text-muted-foreground" : ""}`} onClick={() => { setIsMuted(!isMuted); toast({ title: isMuted ? "🔊 Voice On" : "🔇 Voice Off" }); }}>
+            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          </Button>
+        </div>
       </div>
 
       <div className="absolute top-4 left-4 right-16 z-[400]">
@@ -367,6 +365,9 @@ export default function NavigationPage() {
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Merged Route Details: speed limit, restrictions, fuel & viewpoints */}
+              <RouteDetailsPanel routeCoords={route?.coordinates} mode={selectedMode} />
 
               {/* Upcoming turn-by-turn preview */}
               {route && !isNavigating && (
