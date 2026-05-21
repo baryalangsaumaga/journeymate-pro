@@ -372,6 +372,9 @@ export default function NavigationPage() {
                 </CardContent>
               </Card>
 
+              {/* Merged Route Details: speed limit, restrictions, fuel & viewpoints */}
+              <RouteDetailsPanel routeCoords={route?.coordinates} mode={selectedMode} />
+
               {/* Upcoming turn-by-turn preview */}
               {route && !isNavigating && (
                 <Card className="border-0 card-elevated">
