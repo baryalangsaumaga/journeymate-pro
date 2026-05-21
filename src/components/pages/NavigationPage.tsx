@@ -15,6 +15,8 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { mockLocations } from "@/data/mockData";
 import { fetchRoute, formatDistance, formatDuration, RouteResult, RouteStep } from "@/lib/routing";
+import { RouteDetailsPanel } from "@/components/travel/RouteDetailsPanel";
+import { MapLayerSwitcher, type MapStyle } from "@/components/travel/MapLayerSwitcher";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
