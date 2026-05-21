@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  MapPin, Clock, CheckCircle2, Circle, Plus, Download, Share2,
-  Car, Bus, Train, Plane, Ship, Bike, Footprints, CalendarDays,
-  Users, MoreVertical, ChevronLeft, Edit3, Copy, Trash2,
-  AlertCircle, Navigation, X
+  MapPin, Plus, Download, Share2, CalendarDays,
+  Users, ChevronLeft, Edit3, Copy, Trash2,
+  AlertCircle, Navigation, ListChecks, Route as RouteIcon, Sparkles,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,15 +13,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { mockTrips } from "@/data/mockData";
-import type { TransitType, WeatherCondition, Trip } from "@/types/travel";
+import type { Trip } from "@/types/travel";
 import { generatePDF, downloadJSON } from "@/lib/pdf";
 import { repo } from "@/lib/storage";
-
-const transitIcons: Record<TransitType, typeof Car> = { car: Car, bus: Bus, train: Train, plane: Plane, ferry: Ship, bike: Bike, walk: Footprints };
-const weatherIcons: Record<WeatherCondition, string> = { sunny: "☀️", cloudy: "⛅", rainy: "🌧️", stormy: "⛈️", snowy: "❄️", foggy: "🌫️", windy: "💨" };
+import { ItineraryTimeline } from "@/components/travel/ItineraryTimeline";
+import { TripWizard } from "@/components/travel/TripWizard";
+import { RoutePlannerPanel } from "@/components/travel/RoutePlannerPanel";
+import { AutoItineraryPanel } from "@/components/travel/AutoItineraryPanel";
+import { WeatherWidget } from "@/components/travel/WeatherWidget";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
+
+type DetailTab = "timeline" | "plan" | "auto";
 
 export default function ItineraryPage() {
   const [trips, setTrips] = useState<Trip[]>(mockTrips);
