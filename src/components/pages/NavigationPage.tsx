@@ -62,7 +62,7 @@ export default function NavigationPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [mapStyle, setMapStyle] = useState<"voyager" | "dark" | "light">("voyager");
+  const [mapStyle, setMapStyle] = useState<MapStyle>("voyager");
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
