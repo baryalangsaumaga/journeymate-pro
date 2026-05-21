@@ -382,12 +382,14 @@ export default function ItineraryPage() {
               </AnimatePresence>
             </motion.div>
 
-            {/* Add Stop */}
-            <motion.div variants={item}>
-              <Button variant="outline" className="w-full h-11 rounded-2xl border-dashed border-2 border-border text-muted-foreground gap-2 font-semibold text-xs" onClick={() => setAddStopOpen(true)}>
-                <Plus className="w-4 h-4" /> Add Stop to Itinerary
-              </Button>
-            </motion.div>
+            {/* Add Stop — handled inside the Planner tab now */}
+            {detailTab === "timeline" && (
+              <motion.div variants={item}>
+                <Button variant="outline" className="w-full h-11 rounded-2xl border-dashed border-2 border-border text-muted-foreground gap-2 font-semibold text-xs" onClick={() => setDetailTab("plan")}>
+                  <Plus className="w-4 h-4" /> Add stops in Planner
+                </Button>
+              </motion.div>
+            )}
 
             {/* Collaborators */}
             <motion.div variants={item}>
