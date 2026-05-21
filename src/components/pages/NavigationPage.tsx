@@ -220,12 +220,6 @@ export default function NavigationPage() {
     toast({ title: "📍 Centered on Your Location" });
   };
 
-  const handleLayerSwitch = () => {
-    const styles: ("voyager" | "dark" | "light")[] = ["voyager", "dark", "light"];
-    const next = styles[(styles.indexOf(mapStyle) + 1) % styles.length];
-    setMapStyle(next);
-    toast({ title: `🗺️ Map Style: ${next}` });
-  };
 
   const handleStartNav = () => {
     if (!route) return;
