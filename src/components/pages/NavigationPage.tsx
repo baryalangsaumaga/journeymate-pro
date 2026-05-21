@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Navigation, Car, Bus, Footprints, Bike,
   Fuel, AlertTriangle, ArrowRight, ArrowLeft, ArrowUp, CornerUpRight, CornerUpLeft, Flag,
-  Gauge, Route, Layers, Locate, Volume2, VolumeX,
+  Gauge, Route, Locate, Volume2, VolumeX,
   Search, Loader2
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
