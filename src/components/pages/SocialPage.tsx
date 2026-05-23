@@ -377,6 +377,34 @@ export default function SocialPage() {
           </Button>
         </DialogContent>
       </Dialog>
+
+      <AnimatePresence>
+        {activeCall === "video" && callPeer && (
+          <VideoCallOverlay
+            key="video-call"
+            conversationId={conversationId}
+            localUserId={currentUser.id}
+            remoteUserId={callPeer.id}
+            remoteName={callPeer.name}
+            remoteAvatar={callPeer.avatar}
+            autoStart
+            onClose={() => setActiveCall(null)}
+          />
+        )}
+        {activeCall === "audio" && callPeer && (
+          <VoiceCallOverlay
+            key="voice-call"
+            conversationId={conversationId}
+            localUserId={currentUser.id}
+            remoteUserId={callPeer.id}
+            remoteName={callPeer.name}
+            remoteAvatar={callPeer.avatar}
+            autoStart
+            onClose={() => setActiveCall(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
+
