@@ -15,6 +15,7 @@ import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { mockMessages, collaborators, currentUser } from "@/data/mockData";
+import { VideoCallOverlay, VoiceCallOverlay, AnimatePresence } from "@/components/travel/CallOverlay";
 
 const createUserIcon = (name: string, online: boolean) => L.divIcon({
   className: "",
@@ -131,6 +132,11 @@ export default function SocialPage() {
   const [shareLocation, setShareLocation] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
+  const [activeCall, setActiveCall] = useState<null | "audio" | "video">(null);
+  // 1:1 call against the first online collaborator (group calls would fan-out this id).
+  const callPeer = collaborators.find(c => c.isOnline) ?? collaborators[0];
+  const conversationId = "manila-heritage-walk";
+
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -177,7 +183,15 @@ export default function SocialPage() {
   };
 
   const handleCall = (type: "audio" | "video") => {
-    toast({ title: type === "audio" ? "📞 Calling..." : "📹 Video Calling...", description: `Starting ${type} call with Manila Heritage Walk group.` });
+    if (!callPeer) {
+      toast({ title: "No one to call", description: "No members available right now.", variant: "destructive" });
+      return;
+    }
+    setActiveCall(type);
+    toast({
+      title: type === "audio" ? "📞 Calling…" : "📹 Video Calling…",
+      description: `Open this app in a second browser tab to answer as ${callPeer.name}.`,
+    });
   };
 
   const handleInvite = () => {
@@ -363,6 +377,34 @@ export default function SocialPage() {
           </Button>
         </DialogContent>
       </Dialog>
+
+      <AnimatePresence>
+        {activeCall === "video" && callPeer && (
+          <VideoCallOverlay
+            key="video-call"
+            conversationId={conversationId}
+            localUserId={currentUser.id}
+            remoteUserId={callPeer.id}
+            remoteName={callPeer.name}
+            remoteAvatar={callPeer.avatar}
+            autoStart
+            onClose={() => setActiveCall(null)}
+          />
+        )}
+        {activeCall === "audio" && callPeer && (
+          <VoiceCallOverlay
+            key="voice-call"
+            conversationId={conversationId}
+            localUserId={currentUser.id}
+            remoteUserId={callPeer.id}
+            remoteName={callPeer.name}
+            remoteAvatar={callPeer.avatar}
+            autoStart
+            onClose={() => setActiveCall(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
+
