@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { mockMessages, collaborators, currentUser } from "@/data/mockData";
+import { mockMessages, collaborators, currentUser, heatmapData } from "@/data/mockData";
 import { VideoCallOverlay, VoiceCallOverlay, AnimatePresence } from "@/components/travel/CallOverlay";
 
 const createUserIcon = (name: string, online: boolean) => L.divIcon({
@@ -24,12 +24,13 @@ const createUserIcon = (name: string, online: boolean) => L.divIcon({
   iconAnchor: [16, 16],
 });
 
-function TrackingMap() {
+function TrackingMap({ showHeatmap }: { showHeatmap: boolean }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const markersRef = useRef<Record<string, L.Marker>>({});
   const trailsRef = useRef<Record<string, L.Polyline>>({});
   const positionsRef = useRef<Record<string, [number, number][]>>({});
+  const heatLayersRef = useRef<L.Circle[]>([]);
   const allUsers = [currentUser, ...collaborators.filter(c => c.lastLocation)];
 
   useEffect(() => {
@@ -122,6 +123,24 @@ function TrackingMap() {
     };
   }, []);
 
+  // Heatmap overlay (circle-based, no extra dep)
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map) return;
+    heatLayersRef.current.forEach(c => c.remove());
+    heatLayersRef.current = [];
+    if (!showHeatmap) return;
+    heatmapData.forEach(p => {
+      const c = L.circle([p.lat, p.lng], {
+        radius: 3000 + p.intensity * 6000,
+        color: "transparent",
+        fillColor: `hsl(${(1 - p.intensity) * 220}, 90%, 50%)`,
+        fillOpacity: 0.25 + p.intensity * 0.3,
+      }).addTo(map);
+      heatLayersRef.current.push(c);
+    });
+  }, [showHeatmap]);
+
   return <div ref={mapRef} className="absolute inset-0 bg-muted" />;
 }
 
@@ -133,6 +152,7 @@ export default function SocialPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [activeCall, setActiveCall] = useState<null | "audio" | "video">(null);
+  const [showHeatmap, setShowHeatmap] = useState(false);
   // 1:1 call against the first online collaborator (group calls would fan-out this id).
   const callPeer = collaborators.find(c => c.isOnline) ?? collaborators[0];
   const conversationId = "manila-heritage-walk";
@@ -341,8 +361,18 @@ export default function SocialPage() {
         </TabsContent>
 
         <TabsContent value="tracking" className="flex-1 m-0 relative overflow-hidden">
-          <TrackingMap />
-          <div className="absolute bottom-4 left-4 right-4 z-[400] pointer-events-none">
+          <TrackingMap showHeatmap={showHeatmap} />
+          <div className="absolute top-4 right-4 z-30">
+            <button
+              onClick={() => setShowHeatmap(v => !v)}
+              className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold shadow-card-hover backdrop-blur-sm border border-border/50 ${
+                showHeatmap ? "bg-primary text-primary-foreground" : "bg-card/95"
+              }`}
+            >
+              {showHeatmap ? "Hide" : "Show"} Heatmap
+            </button>
+          </div>
+          <div className="absolute bottom-4 left-4 right-4 z-30 pointer-events-none">
             <Card className="border-0 card-elevated pointer-events-auto">
               <CardContent className="p-3.5">
                 <p className="text-xs font-semibold mb-2.5">Live Tracking · {collaborators.filter(c => c.isOnline).length} sharing</p>

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   MapPin, Plus, Download, Share2, CalendarDays,
   Users, ChevronLeft, Edit3, Copy, Trash2,
-  AlertCircle, Navigation, ListChecks, Route as RouteIcon, Sparkles,
+  AlertCircle, Navigation, ListChecks, Route as RouteIcon, Sparkles, Play,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { mockTrips } from "@/data/mockData";
-import type { Trip } from "@/types/travel";
+import type { Trip, Location, ItineraryStop } from "@/types/travel";
 import { generatePDF, downloadJSON } from "@/lib/pdf";
 import { repo } from "@/lib/storage";
 import { ItineraryTimeline } from "@/components/travel/ItineraryTimeline";
@@ -21,6 +21,10 @@ import { TripWizard } from "@/components/travel/TripWizard";
 import { RoutePlannerPanel } from "@/components/travel/RoutePlannerPanel";
 import { AutoItineraryPanel } from "@/components/travel/AutoItineraryPanel";
 import { WeatherWidget } from "@/components/travel/WeatherWidget";
+import { PlaceSearchInput } from "@/components/travel/PlaceSearchInput";
+import { PlaceDetailsSheet } from "@/components/travel/PlaceDetailsSheet";
+import { tripSession, appNavigate } from "@/lib/tripSession";
+import { useGeolocation } from "@/hooks/useGeolocation";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
@@ -40,6 +44,9 @@ export default function ItineraryPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
+  const [detailPlace, setDetailPlace] = useState<Location | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const { fix } = useGeolocation();
 
   const completedStops = selectedTrip.stops.filter(s => s.isCompleted).length;
   const progress = (completedStops / selectedTrip.stops.length) * 100;
@@ -133,6 +140,42 @@ export default function ItineraryPage() {
       stops: prev.stops.map(s => s.id === stopId ? { ...s, isCompleted: !s.isCompleted } : s)
     }));
     toast({ title: "✅ Stop Updated" });
+  };
+
+  const handlePickStop = (stop: ItineraryStop) => {
+    setDetailPlace(stop.location);
+    setDetailOpen(true);
+  };
+
+  const handleAddStop = (place: Location) => {
+    const newStop: ItineraryStop = {
+      id: `s-${Date.now()}`,
+      location: place,
+      arrivalTime: "—:—",
+      departureTime: "—:—",
+      notes: "Added from search",
+      transitType: "car",
+      isCompleted: false,
+    };
+    setSelectedTrip(prev => ({ ...prev, stops: [...prev.stops, newStop] }));
+    toast({ title: "📍 Stop Added", description: place.name });
+  };
+
+  const handleStartTrip = (stops?: ItineraryStop[]) => {
+    const useStops = stops ?? selectedTrip.stops;
+    if (useStops.length === 0) {
+      toast({ title: "Add at least one stop first" });
+      return;
+    }
+    tripSession.setTrip({
+      title: selectedTrip.title,
+      stops: useStops,
+      strategy: "time",
+      pace: "balanced",
+      startFrom: fix ? { lat: fix.lat, lng: fix.lng } : undefined,
+    });
+    appNavigate("navigate");
+    toast({ title: "🚀 Trip Started", description: "Your tour guide is plotting the route…" });
   };
 
   return (
@@ -359,7 +402,7 @@ export default function ItineraryPage() {
               <AnimatePresence mode="wait">
                 {detailTab === "timeline" && (
                   <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                    <ItineraryTimeline stops={selectedTrip.stops} onToggle={handleToggleStop} />
+                    <ItineraryTimeline stops={selectedTrip.stops} onToggle={handleToggleStop} onPick={handlePickStop} />
                   </motion.div>
                 )}
                 {detailTab === "plan" && (
@@ -374,22 +417,35 @@ export default function ItineraryPage() {
                 {detailTab === "auto" && (
                   <motion.div key="auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <AutoItineraryPanel
-                      centerLat={selectedTrip.stops[0]?.location.lat}
-                      centerLng={selectedTrip.stops[0]?.location.lng}
+                      centerLat={fix?.lat ?? selectedTrip.stops[0]?.location.lat}
+                      centerLng={fix?.lng ?? selectedTrip.stops[0]?.location.lng}
+                      onUseAsTrip={(stops) => handleStartTrip(stops)}
                     />
                   </motion.div>
                 )}
               </AnimatePresence>
             </motion.div>
 
-            {/* Add Stop — handled inside the Planner tab now */}
+            {/* Add Stop — search input directly inside Timeline (non-disruptive autocomplete). */}
             {detailTab === "timeline" && (
-              <motion.div variants={item}>
-                <Button variant="outline" className="w-full h-11 rounded-2xl border-dashed border-2 border-border text-muted-foreground gap-2 font-semibold text-xs" onClick={() => setDetailTab("plan")}>
-                  <Plus className="w-4 h-4" /> Add stops in Planner
-                </Button>
+              <motion.div variants={item} className="space-y-2">
+                <PlaceSearchInput
+                  placeholder="Add a stop…"
+                  exclude={selectedTrip.stops.map(s => s.location.id)}
+                  onPick={handleAddStop}
+                />
               </motion.div>
             )}
+
+            {/* Start Trip — hand off to NavigationPage as personal tour guide. */}
+            <motion.div variants={item}>
+              <Button
+                className="w-full h-12 rounded-2xl font-display font-bold shadow-travel text-sm gap-2 glow-primary"
+                onClick={() => handleStartTrip()}
+              >
+                <Play className="w-4 h-4 fill-current" /> Start the Trip
+              </Button>
+            </motion.div>
 
             {/* Collaborators */}
             <motion.div variants={item}>
@@ -520,6 +576,14 @@ export default function ItineraryPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Place details — no Get Directions inside Trips (per spec). */}
+      <PlaceDetailsSheet
+        place={detailPlace}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        showDirections={false}
+      />
     </div>
   );
 }
