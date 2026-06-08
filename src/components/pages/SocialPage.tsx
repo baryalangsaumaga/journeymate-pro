@@ -152,6 +152,7 @@ export default function SocialPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [activeCall, setActiveCall] = useState<null | "audio" | "video">(null);
+  const [showHeatmap, setShowHeatmap] = useState(false);
   // 1:1 call against the first online collaborator (group calls would fan-out this id).
   const callPeer = collaborators.find(c => c.isOnline) ?? collaborators[0];
   const conversationId = "manila-heritage-walk";
@@ -360,8 +361,18 @@ export default function SocialPage() {
         </TabsContent>
 
         <TabsContent value="tracking" className="flex-1 m-0 relative overflow-hidden">
-          <TrackingMap />
-          <div className="absolute bottom-4 left-4 right-4 z-[400] pointer-events-none">
+          <TrackingMap showHeatmap={showHeatmap} />
+          <div className="absolute top-4 right-4 z-30">
+            <button
+              onClick={() => setShowHeatmap(v => !v)}
+              className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold shadow-card-hover backdrop-blur-sm border border-border/50 ${
+                showHeatmap ? "bg-primary text-primary-foreground" : "bg-card/95"
+              }`}
+            >
+              {showHeatmap ? "Hide" : "Show"} Heatmap
+            </button>
+          </div>
+          <div className="absolute bottom-4 left-4 right-4 z-30 pointer-events-none">
             <Card className="border-0 card-elevated pointer-events-auto">
               <CardContent className="p-3.5">
                 <p className="text-xs font-semibold mb-2.5">Live Tracking · {collaborators.filter(c => c.isOnline).length} sharing</p>
