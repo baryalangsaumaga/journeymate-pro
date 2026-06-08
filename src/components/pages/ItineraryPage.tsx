@@ -142,6 +142,42 @@ export default function ItineraryPage() {
     toast({ title: "✅ Stop Updated" });
   };
 
+  const handlePickStop = (stop: ItineraryStop) => {
+    setDetailPlace(stop.location);
+    setDetailOpen(true);
+  };
+
+  const handleAddStop = (place: Location) => {
+    const newStop: ItineraryStop = {
+      id: `s-${Date.now()}`,
+      location: place,
+      arrivalTime: "—:—",
+      departureTime: "—:—",
+      notes: "Added from search",
+      transitType: "car",
+      isCompleted: false,
+    };
+    setSelectedTrip(prev => ({ ...prev, stops: [...prev.stops, newStop] }));
+    toast({ title: "📍 Stop Added", description: place.name });
+  };
+
+  const handleStartTrip = (stops?: ItineraryStop[]) => {
+    const useStops = stops ?? selectedTrip.stops;
+    if (useStops.length === 0) {
+      toast({ title: "Add at least one stop first" });
+      return;
+    }
+    tripSession.setTrip({
+      title: selectedTrip.title,
+      stops: useStops,
+      strategy: "time",
+      pace: "balanced",
+      startFrom: fix ? { lat: fix.lat, lng: fix.lng } : undefined,
+    });
+    appNavigate("navigate");
+    toast({ title: "🚀 Trip Started", description: "Your tour guide is plotting the route…" });
+  };
+
   return (
     <div className="px-4 py-4 pb-6 space-y-4">
       <AnimatePresence mode="wait">
