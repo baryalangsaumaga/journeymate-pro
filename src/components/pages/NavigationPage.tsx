@@ -1,15 +1,13 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Navigation, Car, Bus, Footprints, Bike,
-  Fuel, AlertTriangle, ArrowRight, ArrowLeft, ArrowUp, CornerUpRight, CornerUpLeft, Flag,
-  Gauge, Route, Locate, Volume2, VolumeX,
-  Search, Loader2
+  Car, Bus, Footprints, Bike, AlertTriangle, ArrowRight, ArrowLeft, ArrowUp,
+  CornerUpRight, CornerUpLeft, Flag, Gauge, Route, Locate, Volume2, VolumeX,
+  UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -17,6 +15,12 @@ import { mockLocations } from "@/data/mockData";
 import { fetchRoute, formatDistance, formatDuration, RouteResult, RouteStep } from "@/lib/routing";
 import { RouteDetailsPanel } from "@/components/travel/RouteDetailsPanel";
 import { MapLayerSwitcher, type MapStyle } from "@/components/travel/MapLayerSwitcher";
+import { PlaceSearchInput } from "@/components/travel/PlaceSearchInput";
+import { useGeolocation, distanceMeters } from "@/hooks/useGeolocation";
+import { useVoiceGuide } from "@/hooks/useVoiceGuide";
+import { useWeather } from "@/hooks/useWeather";
+import { tripSession } from "@/lib/tripSession";
+import type { Location } from "@/types/travel";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -25,22 +29,16 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
 });
 
-const createIcon = (color: string, size: number = 12) => L.divIcon({
+const dot = (color: string, size = 12) => L.divIcon({
   className: "",
   html: `<div style="width:${size}px;height:${size}px;background:${color};border-radius:50%;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3)"></div>`,
-  iconSize: [size, size],
-  iconAnchor: [size/2, size/2],
+  iconSize: [size, size], iconAnchor: [size/2, size/2],
 });
-
 const carIcon = () => L.divIcon({
   className: "",
   html: `<div style="width:22px;height:22px;background:hsl(162,72%,40%);border-radius:50%;border:3px solid white;box-shadow:0 0 0 4px hsl(162,72%,40%,.25),0 2px 8px rgba(0,0,0,0.4)"></div>`,
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
+  iconSize: [22, 22], iconAnchor: [11, 11],
 });
-
-const START: [number, number] = [14.5895, 120.9740]; // Intramuros
-const END: [number, number] = [14.1153, 120.9621];   // Tagaytay
 
 const transitModes = [
   { id: "car" as const, icon: Car, label: "Drive" },
@@ -56,18 +54,39 @@ const maneuverIcon = (m?: string, mod?: string) => {
   return ArrowUp;
 };
 
+// Whether a route segment passes a toll-ish corridor (very rough heuristic on mock data).
+function routeHasToll(coords: [number, number][] | undefined, mode: string) {
+  if (mode !== "car" || !coords?.length) return false;
+  // Tag any leg that crosses south of 14.45 (SLEX-ish) as toll for the mock.
+  return coords.some(([lat]) => lat < 14.45);
+}
+
 export default function NavigationPage() {
   const [selectedMode, setSelectedMode] = useState<"car" | "transit" | "walk" | "bike">("car");
   const [isNavigating, setIsNavigating] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
   const [mapStyle, setMapStyle] = useState<MapStyle>("voyager");
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
-  const [progressIdx, setProgressIdx] = useState(0); // index into coords
-  const [speed, setSpeed] = useState(0);
+  const [destination, setDestination] = useState<Location | null>(null);
+  const [tripStops, setTripStops] = useState<Location[]>([]); // multi-leg from "Start the Trip"
+  const [legIdx, setLegIdx] = useState(0);
+  const [searchHidden, setSearchHidden] = useState(false);
+
+  // Real GPS
+  const { fix } = useGeolocation();
+  const userPos = useMemo<[number, number] | null>(
+    () => fix ? [fix.lat, fix.lng] : null,
+    [fix?.lat, fix?.lng],
+  );
+  const startPoint: [number, number] = userPos ?? [14.5895, 120.9740];
+  const { speak, cancel: cancelVoice } = useVoiceGuide(!isMuted);
+
+  // Weather along route (sampled at midpoint of current leg).
+  const midCoord = route?.coordinates?.[Math.floor(route.coordinates.length / 2)];
+  const { data: areaWeather } = useWeather(midCoord?.[0], midCoord?.[1]);
 
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
@@ -75,7 +94,9 @@ export default function NavigationPage() {
   const traveledRef = useRef<L.Polyline | null>(null);
   const carMarkerRef = useRef<L.Marker | null>(null);
   const tileRef = useRef<L.TileLayer | null>(null);
-  const stepMarkersRef = useRef<L.Marker[]>([]);
+  const destMarkerRef = useRef<L.Marker | null>(null);
+  const startMarkerRef = useRef<L.Marker | null>(null);
+  const eateryMarkersRef = useRef<L.Marker[]>([]);
 
   const tileUrls: Record<string, string> = {
     voyager: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
@@ -83,149 +104,202 @@ export default function NavigationPage() {
     light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
   };
 
-  // Initialize map once
+  // Hand-off from Itinerary "Start the Trip"
+  useEffect(() => {
+    const trip = tripSession.takeTrip();
+    if (trip && trip.stops.length > 0) {
+      setTripStops(trip.stops.map(s => s.location));
+      setDestination(trip.stops[0].location);
+      setSearchHidden(true);
+      toast({ title: "🧭 Trip Loaded", description: `${trip.stops.length} stops · ${trip.pace} pace` });
+      return;
+    }
+    const dest = tripSession.takeDestination();
+    if (dest) {
+      setDestination(dest.location);
+      setSearchHidden(true);
+    }
+  }, []);
+
+  // Init map
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
     const map = L.map(mapRef.current, {
-      center: [14.45, 120.98], zoom: 11, zoomControl: false, attributionControl: false,
+      center: startPoint, zoom: 13, zoomControl: false, attributionControl: false,
     });
     tileRef.current = L.tileLayer(tileUrls[mapStyle]).addTo(map);
-    L.marker(START, { icon: createIcon("#22c55e", 16) }).bindPopup("<strong>Start:</strong> Intramuros, Manila").addTo(map);
-    L.marker(END, { icon: createIcon("#ef4444", 16) }).bindPopup("<strong>Destination:</strong> Tagaytay Ridge").addTo(map);
-    mockLocations.filter(l => l.type === "gas-station").forEach(loc => {
-      L.marker([loc.lat, loc.lng], { icon: createIcon("#0ea5e9", 10) }).bindPopup(`<strong>⛽ ${loc.name}</strong>`).addTo(map);
-    });
-    mockLocations.filter(l => l.type === "viewpoint").forEach(loc => {
-      L.marker([loc.lat, loc.lng], { icon: createIcon("#f59e0b", 10) }).bindPopup(`<strong>👁️ ${loc.name}</strong>`).addTo(map);
-    });
     mapInstance.current = map;
     setTimeout(() => map.invalidateSize(), 100);
     return () => { map.remove(); mapInstance.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch real route whenever mode changes
+  // Switch tiles
+  useEffect(() => { tileRef.current?.setUrl(tileUrls[mapStyle]); }, [mapStyle]);
+
+  // Update start marker as GPS arrives
   useEffect(() => {
+    const map = mapInstance.current;
+    if (!map || !userPos) return;
+    if (!startMarkerRef.current) {
+      startMarkerRef.current = L.marker(userPos, { icon: dot("#22c55e", 16) }).bindPopup("📍 You are here").addTo(map);
+    } else {
+      startMarkerRef.current.setLatLng(userPos);
+    }
+  }, [userPos?.[0], userPos?.[1]]);
+
+  // Update destination marker
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map) return;
+    destMarkerRef.current?.remove();
+    if (destination) {
+      destMarkerRef.current = L.marker([destination.lat, destination.lng], { icon: dot("#ef4444", 16) })
+        .bindPopup(`🏁 ${destination.name}`).addTo(map);
+    }
+  }, [destination?.id]);
+
+  // Fetch route when destination/mode/userPos changes
+  useEffect(() => {
+    if (!destination) { setRoute(null); return; }
     let cancelled = false;
     setLoadingRoute(true);
-    fetchRoute(START, END, selectedMode).then(r => {
+    fetchRoute(startPoint, [destination.lat, destination.lng], selectedMode).then(r => {
       if (cancelled) return;
       setRoute(r);
       setStepIdx(0);
-      setProgressIdx(0);
       setLoadingRoute(false);
     });
     return () => { cancelled = true; };
-  }, [selectedMode]);
+  }, [destination?.id, selectedMode, startPoint[0], startPoint[1]]);
 
-  // Draw the route polyline + step markers
+  // Draw the route polyline + place "eateries along the way" markers
   useEffect(() => {
     const map = mapInstance.current;
-    if (!map || !route) return;
-
+    if (!map) return;
     polylineRef.current?.remove();
     traveledRef.current?.remove();
-    stepMarkersRef.current.forEach(m => m.remove());
-    stepMarkersRef.current = [];
+    eateryMarkersRef.current.forEach(m => m.remove());
+    eateryMarkersRef.current = [];
+    if (!route) return;
 
     polylineRef.current = L.polyline(route.coordinates, {
       color: "hsl(162, 72%, 40%)", weight: 5, opacity: 0.85,
     }).addTo(map);
-
     traveledRef.current = L.polyline([], {
       color: "hsl(162, 72%, 25%)", weight: 6, opacity: 1,
     }).addTo(map);
 
-    // step markers (small dots at maneuver points)
-    route.steps.slice(1, -1).forEach(s => {
-      const mk = L.circleMarker(s.location, {
-        radius: 4, color: "white", weight: 2, fillColor: "hsl(162,72%,40%)", fillOpacity: 1,
-      }).bindPopup(`<strong>${s.instruction}</strong><br/>${formatDistance(s.distance)}`).addTo(map);
-      stepMarkersRef.current.push(mk as unknown as L.Marker);
+    // Eateries near the route
+    const eateries = mockLocations.filter(l =>
+      (l.type === "restaurant" || l.type === "poi") &&
+      route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
+    );
+    eateries.forEach(e => {
+      const mk = L.marker([e.lat, e.lng], { icon: dot("#f59e0b", 10) })
+        .bindPopup(`<strong>🍽️ ${e.name}</strong><br/><small>${e.rating ?? ""}★ along your route</small>`).addTo(map);
+      eateryMarkersRef.current.push(mk);
     });
 
-    if (route.coordinates.length > 1 && !isNavigating) {
+    if (!isNavigating && route.coordinates.length > 1) {
       map.fitBounds(L.latLngBounds(route.coordinates), { padding: [40, 40] });
     }
   }, [route]);
 
-  // Switch tiles
+  // Live GPS follow: snap user position to the route, advance steps, voice prompts
   useEffect(() => {
-    if (tileRef.current) tileRef.current.setUrl(tileUrls[mapStyle]);
-  }, [mapStyle]);
-
-  // Navigation simulation loop — advances along route coordinates
-  useEffect(() => {
-    if (!isNavigating || !route || route.coordinates.length < 2) return;
+    if (!isNavigating || !route || !userPos) return;
     const map = mapInstance.current;
     if (!map) return;
 
-    // Spawn car marker at current progress
-    const pos = route.coordinates[progressIdx];
+    // Update car marker = user position
     if (!carMarkerRef.current) {
-      carMarkerRef.current = L.marker(pos, { icon: carIcon(), zIndexOffset: 1000 }).addTo(map);
+      carMarkerRef.current = L.marker(userPos, { icon: carIcon(), zIndexOffset: 1000 }).addTo(map);
     } else {
-      carMarkerRef.current.setLatLng(pos);
+      carMarkerRef.current.setLatLng(userPos);
     }
-    map.setView(pos, 15, { animate: true });
+    map.setView(userPos, 16, { animate: true });
 
-    const baseSpeed = selectedMode === "walk" ? 1 : selectedMode === "bike" ? 2 : 4;
-    const interval = setInterval(() => {
-      setProgressIdx(prev => {
-        const next = Math.min(prev + baseSpeed, route.coordinates.length - 1);
-        const nextPos = route.coordinates[next];
-        carMarkerRef.current?.setLatLng(nextPos);
-        traveledRef.current?.setLatLngs(route.coordinates.slice(0, next + 1));
-        map.panTo(nextPos, { animate: true, duration: 0.4 } as any);
+    // Find nearest coordinate on route -> draw traveled polyline up to that index
+    let minIdx = 0, minD = Infinity;
+    route.coordinates.forEach((c, i) => {
+      const d = Math.hypot(c[0] - userPos[0], c[1] - userPos[1]);
+      if (d < minD) { minD = d; minIdx = i; }
+    });
+    traveledRef.current?.setLatLngs(route.coordinates.slice(0, minIdx + 1));
 
-        // randomize speed display
-        setSpeed(50 + Math.round(Math.random() * 40));
+    // Advance step when within ~50m of next step's maneuver point
+    const next = route.steps[stepIdx + 1];
+    if (next) {
+      const dToNext = distanceMeters({ lat: userPos[0], lng: userPos[1] }, { lat: next.location[0], lng: next.location[1] });
+      if (dToNext < 50) {
+        setStepIdx(s => s + 1);
+        speak(next.instruction);
+      }
+    }
 
-        // advance step when we pass its location
-        setStepIdx(si => {
-          const step = route.steps[si + 1];
-          if (!step) return si;
-          const [slat, slng] = step.location;
-          const d = Math.hypot(nextPos[0] - slat, nextPos[1] - slng);
-          if (d < 0.005) {
-            if (!isMuted) toast({ title: "🔊 " + step.instruction });
-            return si + 1;
-          }
-          return si;
-        });
+    // Arrived?
+    const dest = route.coordinates[route.coordinates.length - 1];
+    if (distanceMeters({ lat: userPos[0], lng: userPos[1] }, { lat: dest[0], lng: dest[1] }) < 30) {
+      speak("You have arrived at your destination.");
+      toast({ title: "🏁 You have arrived!", description: destination?.name ?? "" });
+      // multi-leg: advance to next stop
+      if (tripStops.length && legIdx < tripStops.length - 1) {
+        const nextLeg = tripStops[legIdx + 1];
+        setLegIdx(i => i + 1);
+        setDestination(nextLeg);
+        setStepIdx(0);
+        toast({ title: "➡️ Next Stop", description: nextLeg.name });
+      } else {
+        setIsNavigating(false);
+      }
+    }
+  }, [userPos?.[0], userPos?.[1], isNavigating, route, stepIdx]);
 
-        if (next >= route.coordinates.length - 1) {
-          clearInterval(interval);
-          toast({ title: "🏁 You have arrived!", description: "Welcome to Tagaytay Ridge." });
-          setIsNavigating(false);
-        }
-        return next;
-      });
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [isNavigating, route]);
-
-  // Remove car marker when stopping
+  // Stop -> clean car marker + voice
   useEffect(() => {
-    if (!isNavigating && carMarkerRef.current) {
-      carMarkerRef.current.remove();
+    if (!isNavigating) {
+      carMarkerRef.current?.remove();
       carMarkerRef.current = null;
       traveledRef.current?.setLatLngs([]);
+      cancelVoice();
     }
-  }, [isNavigating]);
+  }, [isNavigating, cancelVoice]);
+
+  // Periodically suggest a nearby eatery while navigating
+  useEffect(() => {
+    if (!isNavigating || !route) return;
+    const id = setInterval(() => {
+      const eateries = mockLocations.filter(l =>
+        (l.type === "restaurant" || l.type === "poi") &&
+        route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
+      );
+      if (!eateries.length) return;
+      const pick = eateries[Math.floor(Math.random() * eateries.length)];
+      toast({ title: "🍽️ Eatery Ahead", description: `${pick.name} · ${pick.rating ?? ""}★` });
+    }, 45000);
+    return () => clearInterval(id);
+  }, [isNavigating, route]);
+
+  // Weather monitor along the way
+  useEffect(() => {
+    if (!isNavigating || !areaWeather) return;
+    toast({ title: `${weatherEmoji(areaWeather.condition)} ${areaWeather.tempC}°C ahead`, description: areaWeather.summary });
+  }, [isNavigating, areaWeather?.condition]);
 
   const handleLocate = () => {
-    if (!mapInstance.current || !route) return;
-    mapInstance.current.setView(route.coordinates[progressIdx] ?? START, 15, { animate: true });
+    if (!mapInstance.current || !userPos) return;
+    mapInstance.current.setView(userPos, 16, { animate: true });
     toast({ title: "📍 Centered on Your Location" });
   };
-
 
   const handleStartNav = () => {
     if (!route) return;
     setIsNavigating(v => !v);
     if (!isNavigating) {
-      toast({ title: "🧭 Navigation Started", description: route.steps[0]?.instruction });
+      const first = route.steps[0]?.instruction ?? "Starting navigation";
+      toast({ title: "🧭 Navigation Started", description: first });
+      speak(first);
       setSheetExpanded(false);
     } else {
       toast({ title: "⏹️ Navigation Stopped" });
@@ -233,43 +307,83 @@ export default function NavigationPage() {
     }
   };
 
+  const handlePickDestination = (place: Location) => {
+    setDestination(place);
+    setSearchHidden(true); // hide search so it doesn't disrupt
+    toast({ title: "📍 Destination Set", description: place.name });
+  };
+
   const currentStep: RouteStep | undefined = route?.steps[stepIdx];
   const nextStep: RouteStep | undefined = route?.steps[stepIdx + 1];
   const ManeuverIcon = maneuverIcon(nextStep?.maneuver ?? currentStep?.maneuver, nextStep?.modifier ?? currentStep?.modifier);
+  const showToll = routeHasToll(route?.coordinates, selectedMode);
+
+  // Hide map controls when the sheet is expanded (so they don't overlap the hamburger drawer or sheet content).
+  const showControls = !sheetExpanded;
 
   return (
     <div className="relative h-[calc(100dvh-7rem)]">
       <div className="absolute inset-0 z-0" ref={mapRef} />
 
-      <div className="absolute top-4 right-4 flex flex-col items-end gap-2 z-[400]">
-        <MapLayerSwitcher value={mapStyle} onChange={setMapStyle} />
-        <div className="flex flex-col gap-2">
-          <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLocate}><Locate className="w-4 h-4" /></Button>
-          <Button variant="outline" size="icon" className={`h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50 ${isMuted ? "text-muted-foreground" : ""}`} onClick={() => { setIsMuted(!isMuted); toast({ title: isMuted ? "🔊 Voice On" : "🔇 Voice Off" }); }}>
-            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </Button>
-        </div>
-      </div>
+      <AnimatePresence>
+        {showControls && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="absolute top-4 right-4 flex flex-col items-end gap-2 z-30"
+          >
+            <MapLayerSwitcher value={mapStyle} onChange={setMapStyle} />
+            <div className="flex flex-col gap-2">
+              <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLocate}><Locate className="w-4 h-4" /></Button>
+              <Button variant="outline" size="icon" className={`h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50 ${isMuted ? "text-muted-foreground" : ""}`} onClick={() => { setIsMuted(!isMuted); toast({ title: isMuted ? "🔊 Voice On" : "🔇 Voice Off" }); }}>
+                {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <div className="absolute top-4 left-4 right-16 z-[400]">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search destination..."
-            className="pl-9 h-10 bg-card/95 backdrop-blur-sm shadow-card-hover border-border/50 text-sm rounded-xl"
-          />
-        </div>
-      </div>
+      {/* Destination search — hidden after a pick to avoid disrupting the user. */}
+      <AnimatePresence>
+        {showControls && !searchHidden && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            className="absolute top-4 left-4 right-16 z-30"
+          >
+            <PlaceSearchInput
+              placeholder="Search destination…"
+              onPick={handlePickDestination}
+              className="bg-card/95 backdrop-blur-sm rounded-xl shadow-card-hover"
+            />
+          </motion.div>
+        )}
+        {showControls && searchHidden && destination && (
+          <motion.div
+            key="dest-pill"
+            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            className="absolute top-4 left-4 right-16 z-30"
+          >
+            <button
+              onClick={() => setSearchHidden(false)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-card/95 backdrop-blur-sm shadow-card-hover border border-border/50 text-left"
+            >
+              <NavIcon className="w-4 h-4 text-primary flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] text-muted-foreground">Destination</p>
+                <p className="text-xs font-semibold truncate">{destination.name}</p>
+              </div>
+              {tripStops.length > 0 && (
+                <Badge variant="outline" className="text-[9px] h-5">{legIdx + 1}/{tripStops.length}</Badge>
+              )}
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isNavigating && nextStep && (
           <motion.div
-            initial={{ y: -50, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -50, opacity: 0 }}
-            className="absolute top-16 left-4 right-4 z-[400]"
+            initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -50, opacity: 0 }}
+            className="absolute top-16 left-4 right-4 z-30"
           >
             <Card className="border-0 shadow-travel-lg bg-primary text-primary-foreground overflow-hidden">
               <CardContent className="p-3.5">
@@ -282,18 +396,20 @@ export default function NavigationPage() {
                     <p className="text-xs opacity-80 mt-0.5">in {formatDistance(nextStep.distance)}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="font-display font-bold text-lg leading-none">{formatDuration((route?.duration ?? 0) * (1 - progressIdx / (route?.coordinates.length ?? 1)))}</p>
+                    <p className="font-display font-bold text-lg leading-none">{formatDuration((route?.duration ?? 0) * (1 - stepIdx / Math.max(1, route?.steps.length ?? 1)))}</p>
                     <p className="text-[10px] opacity-70 mt-0.5">remaining</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 mt-3 pt-2.5 border-t border-primary-foreground/15">
                   <div className="flex items-center gap-1.5">
                     <Gauge className="w-3.5 h-3.5" />
-                    <span className="text-xs font-semibold">{speed} km/h</span>
+                    <span className="text-xs font-semibold">{Math.round((fix?.speed ?? 0) * 3.6)} km/h</span>
                   </div>
-                  <Badge className="bg-warning text-warning-foreground text-[9px] h-5 font-semibold">
-                    <AlertTriangle className="w-2.5 h-2.5 mr-0.5" /> Limit: 80
-                  </Badge>
+                  {areaWeather && (
+                    <Badge className="bg-primary-foreground/20 text-primary-foreground text-[9px] h-5 font-semibold gap-1">
+                      <CloudSun className="w-2.5 h-2.5" /> {areaWeather.tempC}°C
+                    </Badge>
+                  )}
                   <div className="flex-1" />
                   <span className="text-[10px] opacity-70">Step {stepIdx + 1} / {route?.steps.length}</span>
                 </div>
@@ -304,7 +420,7 @@ export default function NavigationPage() {
       </AnimatePresence>
 
       <motion.div
-        className="absolute bottom-0 left-0 right-0 glass-ultra rounded-t-3xl z-[400] border-t border-border/30"
+        className="absolute bottom-0 left-0 right-0 glass-ultra rounded-t-3xl z-30 border-t border-border/30"
         animate={{ height: sheetExpanded ? "auto" : 52 }}
         transition={{ type: "spring", stiffness: 400, damping: 35 }}
       >
@@ -315,11 +431,17 @@ export default function NavigationPage() {
         <AnimatePresence>
           {sheetExpanded && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="px-4 pb-4 space-y-3"
             >
+              {!destination && (
+                <Card className="border-0 card-interactive">
+                  <CardContent className="p-3 text-center text-xs text-muted-foreground">
+                    Search a destination above to plan a route.
+                  </CardContent>
+                </Card>
+              )}
+
               <div className="flex gap-2">
                 {transitModes.map(({ id, icon: Icon, label }) => (
                   <button
@@ -332,86 +454,75 @@ export default function NavigationPage() {
                     <Icon className="w-4 h-4" />
                     <span className="text-[10px] font-semibold">{label}</span>
                     <span className={`text-[9px] ${selectedMode === id ? "opacity-70" : "text-muted-foreground"}`}>
-                      {loadingRoute ? "…" : route ? formatDuration(route.duration) : ""}
+                      {loadingRoute ? "…" : route ? formatDuration(route.duration) : "—"}
                     </span>
                   </button>
                 ))}
               </div>
 
-              <Card className="border-0 card-elevated">
-                <CardContent className="p-3.5">
-                  <div className="flex items-center justify-between mb-2.5">
-                    <div className="flex items-center gap-2">
-                      <Route className="w-4 h-4 text-primary" />
-                      <span className="text-xs font-semibold">Live Route (OSRM)</span>
-                    </div>
-                    <Badge variant="outline" className="text-[9px] h-5 font-semibold border-primary/20 text-primary">
-                      {loadingRoute ? "Loading…" : `${route?.steps.length ?? 0} steps`}
-                    </Badge>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="text-center p-2 rounded-lg bg-muted">
-                      <p className="font-display font-bold text-sm">{route ? formatDistance(route.distance) : "—"}</p>
-                      <p className="text-[9px] text-muted-foreground font-medium mt-0.5">Distance</p>
-                    </div>
-                    <div className="text-center p-2 rounded-lg bg-muted">
-                      <p className="font-display font-bold text-sm">{route ? formatDuration(route.duration) : "—"}</p>
-                      <p className="text-[9px] text-muted-foreground font-medium mt-0.5">Duration</p>
-                    </div>
-                    <div className="text-center p-2 rounded-lg bg-muted">
-                      <p className="font-display font-bold text-sm">₱385</p>
-                      <p className="text-[9px] text-muted-foreground font-medium mt-0.5">Toll Fee</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Merged Route Details: speed limit, restrictions, fuel & viewpoints */}
-              <RouteDetailsPanel routeCoords={route?.coordinates} mode={selectedMode} />
-
-              {/* Upcoming turn-by-turn preview */}
-              {route && !isNavigating && (
+              {route && (
                 <Card className="border-0 card-elevated">
-                  <CardContent className="p-3 space-y-1.5 max-h-32 overflow-y-auto">
-                    {route.steps.slice(0, 4).map((s, i) => {
-                      const Icon = maneuverIcon(s.maneuver, s.modifier);
-                      return (
-                        <div key={i} className="flex items-center gap-2.5">
-                          <Icon className="w-3.5 h-3.5 text-primary flex-shrink-0" />
-                          <span className="text-[11px] flex-1 truncate">{s.instruction}</span>
-                          <span className="text-[9px] text-muted-foreground">{formatDistance(s.distance)}</span>
+                  <CardContent className="p-3.5">
+                    <div className="flex items-center justify-between mb-2.5">
+                      <div className="flex items-center gap-2">
+                        <Route className="w-4 h-4 text-primary" />
+                        <span className="text-xs font-semibold">Live Route</span>
+                      </div>
+                      <Badge variant="outline" className="text-[9px] h-5 font-semibold border-primary/20 text-primary">
+                        {loadingRoute ? "Loading…" : `${route.steps.length} steps`}
+                      </Badge>
+                    </div>
+                    <div className={`grid ${showToll ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
+                      <div className="text-center p-2 rounded-lg bg-muted">
+                        <p className="font-display font-bold text-sm">{formatDistance(route.distance)}</p>
+                        <p className="text-[9px] text-muted-foreground font-medium mt-0.5">Distance</p>
+                      </div>
+                      <div className="text-center p-2 rounded-lg bg-muted">
+                        <p className="font-display font-bold text-sm">{formatDuration(route.duration)}</p>
+                        <p className="text-[9px] text-muted-foreground font-medium mt-0.5">Duration</p>
+                      </div>
+                      {showToll && (
+                        <div className="text-center p-2 rounded-lg bg-muted">
+                          <p className="font-display font-bold text-sm">₱385</p>
+                          <p className="text-[9px] text-muted-foreground font-medium mt-0.5">Toll Fee</p>
                         </div>
-                      );
-                    })}
-                    {route.steps.length > 4 && (
-                      <p className="text-[9px] text-muted-foreground text-center pt-1">+ {route.steps.length - 4} more steps</p>
-                    )}
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               )}
 
-              <div className="flex gap-2">
-                <Card className="flex-1 border-0 card-interactive">
-                  <CardContent className="p-2.5 flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-full border-2 border-destructive flex items-center justify-center flex-shrink-0">
-                      <span className="text-[11px] font-bold">80</span>
+              {/* Route Details now contains speed limit + gas stations (merged). */}
+              {route && <RouteDetailsPanel routeCoords={route.coordinates} mode={selectedMode} />}
+
+              {/* Eateries along the way (visible during planning too). */}
+              {route && (
+                <Card className="border-0 card-elevated">
+                  <CardContent className="p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold flex items-center gap-1.5">
+                        <UtensilsCrossed className="w-3.5 h-3.5 text-accent" /> Eateries Along the Way
+                      </span>
                     </div>
-                    <div>
-                      <p className="text-[11px] font-semibold">Speed Limit</p>
-                      <p className="text-[9px] text-muted-foreground">Expressway</p>
+                    <div className="space-y-1">
+                      {mockLocations
+                        .filter(l => (l.type === "restaurant" || l.type === "poi") &&
+                          route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05))
+                        .slice(0, 4)
+                        .map(e => (
+                          <div key={e.id} className="flex items-center justify-between text-[11px] p-1.5 rounded bg-muted/40">
+                            <span className="font-semibold truncate">{e.name}</span>
+                            <span className="text-muted-foreground">★ {e.rating}</span>
+                          </div>
+                        ))}
+                      {!mockLocations.some(l => (l.type === "restaurant" || l.type === "poi") &&
+                        route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05)) && (
+                        <p className="text-[10px] text-muted-foreground text-center py-1">No eateries detected near route.</p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
-                <Card className="flex-1 border-0 card-interactive">
-                  <CardContent className="p-2.5 flex items-center gap-2.5">
-                    <Fuel className="w-6 h-6 text-info flex-shrink-0" />
-                    <div>
-                      <p className="text-[11px] font-semibold">Gas Stations</p>
-                      <p className="text-[9px] text-muted-foreground">3 along route</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+              )}
 
               <Button
                 disabled={!route || loadingRoute}
@@ -420,7 +531,7 @@ export default function NavigationPage() {
                 }`}
                 onClick={handleStartNav}
               >
-                {loadingRoute ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className={`w-4 h-4 ${isNavigating ? "" : "animate-pulse"}`} />}
+                {loadingRoute ? <Loader2 className="w-4 h-4 animate-spin" /> : <NavIcon className={`w-4 h-4 ${isNavigating ? "" : "animate-pulse"}`} />}
                 {isNavigating ? "Stop Navigation" : "Start Turn-by-Turn"}
               </Button>
             </motion.div>
@@ -429,4 +540,17 @@ export default function NavigationPage() {
       </motion.div>
     </div>
   );
+}
+
+function weatherEmoji(c?: string) {
+  switch (c) {
+    case "sunny": return "☀️";
+    case "cloudy": return "⛅";
+    case "rainy": return "🌧️";
+    case "stormy": return "⛈️";
+    case "snowy": return "❄️";
+    case "foggy": return "🌫️";
+    case "windy": return "💨";
+    default: return "🌤️";
+  }
 }
