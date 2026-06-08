@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Map, Compass, Users, Star, FileText, Settings, Home, Navigation,
@@ -75,6 +75,16 @@ export default function AppShell() {
     setActiveTab(tab as TabId);
     setTimeout(() => setIsLoading(false), 600);
   }, []);
+
+  // Cross-page navigation bus (used by Itinerary "Start Trip" and Explore "Get Directions").
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const tab = (e as CustomEvent<string>).detail;
+      if (tab) navigate(tab);
+    };
+    window.addEventListener("app:navigate", handler as EventListener);
+    return () => window.removeEventListener("app:navigate", handler as EventListener);
+  }, [navigate]);
 
   const handleRefresh = useCallback(async () => {
     await new Promise(resolve => setTimeout(resolve, 1200));
