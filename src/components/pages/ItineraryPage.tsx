@@ -576,6 +576,14 @@ export default function ItineraryPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Place details — no Get Directions inside Trips (per spec). */}
+      <PlaceDetailsSheet
+        place={detailPlace}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        showDirections={false}
+      />
     </div>
   );
 }
