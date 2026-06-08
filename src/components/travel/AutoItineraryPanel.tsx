@@ -1,14 +1,14 @@
-// "Generate from prompt" – weighted-score recommender over mockLocations.
-// Score = rating*20 + interest match*40 + (1 - normalized distance)*40.
+// "Generate from prompt" – weighted-score recommender + schedule arrangement.
+// Caller can grab the generated `scheduled` stops and pass them to Navigation.
 import { useMemo, useState } from "react";
-import { Sparkles, Loader2, Zap } from "lucide-react";
+import { Sparkles, Loader2, Zap, Clock, Brain } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { mockLocations } from "@/data/mockData";
 import { PlaceCard } from "@/components/travel/PlaceCard";
-import type { Location } from "@/types/travel";
+import type { Location, ItineraryStop } from "@/types/travel";
 
 const INTERESTS: { id: string; label: string; types: Location["type"][] }[] = [
   { id: "food", label: "Foodie", types: ["restaurant"] },
@@ -18,16 +18,25 @@ const INTERESTS: { id: string; label: string; types: Location["type"][] }[] = [
   { id: "city", label: "City Life", types: ["city", "poi"] },
 ];
 
+export type Strategy = "time" | "experience";
+export type Pace = "relaxed" | "balanced" | "packed";
+
+const PACE_STOPS: Record<Pace, number> = { relaxed: 3, balanced: 5, packed: 7 };
+const PACE_DUR: Record<Pace, number> = { relaxed: 120, balanced: 75, packed: 45 }; // minutes per stop
+
 interface Props {
   centerLat?: number;
   centerLng?: number;
+  onUseAsTrip?: (stops: ItineraryStop[], strategy: Strategy, pace: Pace) => void;
 }
 
-export function AutoItineraryPanel({ centerLat = 14.5895, centerLng = 120.9740 }: Props) {
+export function AutoItineraryPanel({ centerLat = 14.5895, centerLng = 120.9740, onUseAsTrip }: Props) {
   const [prompt, setPrompt] = useState("");
   const [picked, setPicked] = useState<string[]>(["culture", "food"]);
+  const [strategy, setStrategy] = useState<Strategy>("time");
+  const [pace, setPace] = useState<Pace>("balanced");
   const [generating, setGenerating] = useState(false);
-  const [generated, setGenerated] = useState<{ place: Location; score: number }[] | null>(null);
+  const [generated, setGenerated] = useState<ItineraryStop[] | null>(null);
 
   const toggle = (id: string) =>
     setPicked(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -39,14 +48,40 @@ export function AutoItineraryPanel({ centerLat = 14.5895, centerLng = 120.9740 }
     return mockLocations.map((p, i) => {
       const ratingScore = ((p.rating ?? 3) / 5) * 20;
       const interestScore = matchTypes.has(p.type) ? 40 : 0;
-      const distanceScore = (1 - dists[i] / maxD) * 40;
-      return { place: p, score: Math.round(ratingScore + interestScore + distanceScore) };
+      // Time-optimized weighs distance more; experience-optimized weighs rating more.
+      const distanceWeight = strategy === "time" ? 60 : 25;
+      const ratingWeight = strategy === "time" ? 20 : 55;
+      const distanceScore = (1 - dists[i] / maxD) * distanceWeight;
+      const score = (ratingScore / 20) * ratingWeight + interestScore + distanceScore;
+      return { place: p, score: Math.round(score), dist: dists[i] };
     }).sort((a, b) => b.score - a.score);
-  }, [picked, centerLat, centerLng]);
+  }, [picked, centerLat, centerLng, strategy]);
 
   const generate = () => {
     setGenerating(true);
-    setTimeout(() => { setGenerated(ranked.slice(0, 5)); setGenerating(false); }, 800);
+    setTimeout(() => {
+      const count = PACE_STOPS[pace];
+      const slot = PACE_DUR[pace];
+      let cursor = 9 * 60; // start at 09:00, minutes since midnight
+      const stops: ItineraryStop[] = ranked.slice(0, count).map((r, idx) => {
+        const arr = cursor;
+        const dep = arr + slot;
+        cursor = dep + 30; // 30-min travel between stops
+        // Slot meals: a restaurant near 12:00 and 18:30 wins a small boost (already handled via interests).
+        const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+        return {
+          id: `auto-${idx}-${r.place.id}`,
+          location: r.place,
+          arrivalTime: fmt(arr),
+          departureTime: fmt(dep),
+          notes: `Suggested by Tour Guide · score ${r.score}`,
+          transitType: idx === 0 ? "walk" : "car",
+          isCompleted: false,
+        };
+      });
+      setGenerated(stops);
+      setGenerating(false);
+    }, 700);
   };
 
   return (
@@ -55,8 +90,8 @@ export function AutoItineraryPanel({ centerLat = 14.5895, centerLng = 120.9740 }
         <CardContent className="p-3.5 space-y-3">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-primary" />
-            <span className="text-xs font-display font-bold">AI Itinerary Generator</span>
-            <Badge className="text-[8px] h-[15px] bg-primary/10 text-primary border-0 ml-auto">Beta</Badge>
+            <span className="text-xs font-display font-bold">Personal Tour Guide</span>
+            <Badge className="text-[8px] h-[15px] bg-primary/10 text-primary border-0 ml-auto">Auto</Badge>
           </div>
 
           <Input
@@ -83,25 +118,71 @@ export function AutoItineraryPanel({ centerLat = 14.5895, centerLng = 120.9740 }
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><Brain className="w-2.5 h-2.5" /> Strategy</p>
+              <div className="grid grid-cols-2 gap-1">
+                {(["time", "experience"] as const).map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setStrategy(s)}
+                    className={`px-1.5 py-1.5 rounded-lg text-[10px] font-semibold capitalize transition-all ${
+                      strategy === s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {s === "time" ? "Time" : "Experience"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1"><Clock className="w-2.5 h-2.5" /> Pace</p>
+              <div className="grid grid-cols-3 gap-1">
+                {(["relaxed", "balanced", "packed"] as const).map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setPace(p)}
+                    className={`px-1 py-1.5 rounded-lg text-[9px] font-semibold capitalize transition-all ${
+                      pace === p ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <Button onClick={generate} disabled={generating || picked.length === 0} className="w-full h-10 rounded-xl gap-1.5 shadow-travel font-semibold text-xs">
             {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-            {generating ? "Generating…" : "Generate Itinerary"}
+            {generating ? "Arranging…" : "Generate Itinerary"}
           </Button>
         </CardContent>
       </Card>
 
       {generated && (
         <div className="space-y-2">
-          <h3 className="section-header">Suggested Stops</h3>
-          {generated.map(({ place, score }) => (
+          <div className="flex items-center justify-between">
+            <h3 className="section-header">Your Day, Arranged</h3>
+            <Badge variant="outline" className="text-[9px] font-semibold">{generated.length} stops · {pace}</Badge>
+          </div>
+          {generated.map(s => (
             <PlaceCard
-              key={place.id}
-              place={place}
-              score={score}
-              actionLabel="Add"
-              onAction={() => { /* could push into useRoutePlanner via context */ }}
+              key={s.id}
+              place={s.location}
+              score={0}
+              actionLabel={`${s.arrivalTime} – ${s.departureTime}`}
+              onAction={() => { /* schedule preview */ }}
             />
           ))}
+          {onUseAsTrip && (
+            <Button
+              className="w-full h-10 rounded-xl shadow-travel font-semibold text-xs gap-1.5"
+              onClick={() => onUseAsTrip(generated, strategy, pace)}
+            >
+              <Sparkles className="w-3.5 h-3.5" /> Use as Trip
+            </Button>
+          )}
         </div>
       )}
     </div>
