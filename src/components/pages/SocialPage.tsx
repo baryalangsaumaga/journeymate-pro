@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { mockMessages, collaborators, currentUser } from "@/data/mockData";
+import { mockMessages, collaborators, currentUser, heatmapData } from "@/data/mockData";
 import { VideoCallOverlay, VoiceCallOverlay, AnimatePresence } from "@/components/travel/CallOverlay";
 
 const createUserIcon = (name: string, online: boolean) => L.divIcon({
@@ -24,12 +24,13 @@ const createUserIcon = (name: string, online: boolean) => L.divIcon({
   iconAnchor: [16, 16],
 });
 
-function TrackingMap() {
+function TrackingMap({ showHeatmap }: { showHeatmap: boolean }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const markersRef = useRef<Record<string, L.Marker>>({});
   const trailsRef = useRef<Record<string, L.Polyline>>({});
   const positionsRef = useRef<Record<string, [number, number][]>>({});
+  const heatLayersRef = useRef<L.Circle[]>([]);
   const allUsers = [currentUser, ...collaborators.filter(c => c.lastLocation)];
 
   useEffect(() => {
@@ -121,6 +122,24 @@ function TrackingMap() {
       positionsRef.current = {};
     };
   }, []);
+
+  // Heatmap overlay (circle-based, no extra dep)
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map) return;
+    heatLayersRef.current.forEach(c => c.remove());
+    heatLayersRef.current = [];
+    if (!showHeatmap) return;
+    heatmapData.forEach(p => {
+      const c = L.circle([p.lat, p.lng], {
+        radius: 3000 + p.intensity * 6000,
+        color: "transparent",
+        fillColor: `hsl(${(1 - p.intensity) * 220}, 90%, 50%)`,
+        fillOpacity: 0.25 + p.intensity * 0.3,
+      }).addTo(map);
+      heatLayersRef.current.push(c);
+    });
+  }, [showHeatmap]);
 
   return <div ref={mapRef} className="absolute inset-0 bg-muted" />;
 }
