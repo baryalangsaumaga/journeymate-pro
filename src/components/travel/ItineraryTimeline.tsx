@@ -14,9 +14,10 @@ const WEATHER_ICONS: Record<WeatherCondition, string> = {
 interface Props {
   stops: ItineraryStop[];
   onToggle?: (stopId: string) => void;
+  onPick?: (stop: ItineraryStop) => void;
 }
 
-export function ItineraryTimeline({ stops, onToggle }: Props) {
+export function ItineraryTimeline({ stops, onToggle, onPick }: Props) {
   return (
     <div className="space-y-0">
       {stops.map((stop, idx) => {
@@ -40,7 +41,10 @@ export function ItineraryTimeline({ stops, onToggle }: Props) {
                 <div className={`w-0.5 h-16 my-0.5 rounded-full ${stop.isCompleted ? "bg-success" : "bg-border"}`} />
               )}
             </div>
-            <Card className={`flex-1 border-0 mb-3 ${isNext ? "card-elevated ring-1 ring-primary/20" : "card-interactive"}`}>
+            <Card
+              onClick={() => onPick?.(stop)}
+              className={`flex-1 border-0 mb-3 ${onPick ? "cursor-pointer" : ""} ${isNext ? "card-elevated ring-1 ring-primary/20" : "card-interactive"}`}
+            >
               <CardContent className="p-3.5">
                 {isNext && <Badge className="text-[8px] h-[16px] bg-primary/10 text-primary font-bold border-0 mb-1.5">NEXT STOP</Badge>}
                 <div className="flex items-start justify-between">
