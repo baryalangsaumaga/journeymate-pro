@@ -402,7 +402,7 @@ export default function ItineraryPage() {
               <AnimatePresence mode="wait">
                 {detailTab === "timeline" && (
                   <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                    <ItineraryTimeline stops={selectedTrip.stops} onToggle={handleToggleStop} />
+                    <ItineraryTimeline stops={selectedTrip.stops} onToggle={handleToggleStop} onPick={handlePickStop} />
                   </motion.div>
                 )}
                 {detailTab === "plan" && (
@@ -417,22 +417,35 @@ export default function ItineraryPage() {
                 {detailTab === "auto" && (
                   <motion.div key="auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <AutoItineraryPanel
-                      centerLat={selectedTrip.stops[0]?.location.lat}
-                      centerLng={selectedTrip.stops[0]?.location.lng}
+                      centerLat={fix?.lat ?? selectedTrip.stops[0]?.location.lat}
+                      centerLng={fix?.lng ?? selectedTrip.stops[0]?.location.lng}
+                      onUseAsTrip={(stops) => handleStartTrip(stops)}
                     />
                   </motion.div>
                 )}
               </AnimatePresence>
             </motion.div>
 
-            {/* Add Stop — handled inside the Planner tab now */}
+            {/* Add Stop — search input directly inside Timeline (non-disruptive autocomplete). */}
             {detailTab === "timeline" && (
-              <motion.div variants={item}>
-                <Button variant="outline" className="w-full h-11 rounded-2xl border-dashed border-2 border-border text-muted-foreground gap-2 font-semibold text-xs" onClick={() => setDetailTab("plan")}>
-                  <Plus className="w-4 h-4" /> Add stops in Planner
-                </Button>
+              <motion.div variants={item} className="space-y-2">
+                <PlaceSearchInput
+                  placeholder="Add a stop…"
+                  exclude={selectedTrip.stops.map(s => s.location.id)}
+                  onPick={handleAddStop}
+                />
               </motion.div>
             )}
+
+            {/* Start Trip — hand off to NavigationPage as personal tour guide. */}
+            <motion.div variants={item}>
+              <Button
+                className="w-full h-12 rounded-2xl font-display font-bold shadow-travel text-sm gap-2 glow-primary"
+                onClick={() => handleStartTrip()}
+              >
+                <Play className="w-4 h-4 fill-current" /> Start the Trip
+              </Button>
+            </motion.div>
 
             {/* Collaborators */}
             <motion.div variants={item}>
