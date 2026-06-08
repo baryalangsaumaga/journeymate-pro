@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   MapPin, Plus, Download, Share2, CalendarDays,
   Users, ChevronLeft, Edit3, Copy, Trash2,
-  AlertCircle, Navigation, ListChecks, Route as RouteIcon, Sparkles,
+  AlertCircle, Navigation, ListChecks, Route as RouteIcon, Sparkles, Play,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { mockTrips } from "@/data/mockData";
-import type { Trip } from "@/types/travel";
+import type { Trip, Location, ItineraryStop } from "@/types/travel";
 import { generatePDF, downloadJSON } from "@/lib/pdf";
 import { repo } from "@/lib/storage";
 import { ItineraryTimeline } from "@/components/travel/ItineraryTimeline";
@@ -21,6 +21,10 @@ import { TripWizard } from "@/components/travel/TripWizard";
 import { RoutePlannerPanel } from "@/components/travel/RoutePlannerPanel";
 import { AutoItineraryPanel } from "@/components/travel/AutoItineraryPanel";
 import { WeatherWidget } from "@/components/travel/WeatherWidget";
+import { PlaceSearchInput } from "@/components/travel/PlaceSearchInput";
+import { PlaceDetailsSheet } from "@/components/travel/PlaceDetailsSheet";
+import { tripSession, appNavigate } from "@/lib/tripSession";
+import { useGeolocation } from "@/hooks/useGeolocation";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
@@ -40,6 +44,9 @@ export default function ItineraryPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
+  const [detailPlace, setDetailPlace] = useState<Location | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const { fix } = useGeolocation();
 
   const completedStops = selectedTrip.stops.filter(s => s.isCompleted).length;
   const progress = (completedStops / selectedTrip.stops.length) * 100;
