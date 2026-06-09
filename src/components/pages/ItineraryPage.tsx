@@ -454,15 +454,24 @@ export default function ItineraryPage() {
               </motion.div>
             )}
 
-            {/* Start Trip — hand off to NavigationPage as personal tour guide. */}
-            <motion.div variants={item}>
+            {/* One-tap PDF export + Start Trip */}
+            <motion.div variants={item} className="grid grid-cols-[1fr_auto] gap-2">
               <Button
-                className="w-full h-12 rounded-2xl font-display font-bold shadow-travel text-sm gap-2 glow-primary"
+                className="h-12 rounded-2xl font-display font-bold shadow-travel text-sm gap-2 glow-primary"
                 onClick={() => handleStartTrip()}
               >
                 <Play className="w-4 h-4 fill-current" /> Start the Trip
               </Button>
+              <Button
+                variant="outline"
+                className="h-12 rounded-2xl font-semibold text-xs gap-1.5 px-4"
+                onClick={handleExportPDF}
+                title="Export printable itinerary PDF"
+              >
+                <Download className="w-4 h-4" /> PDF
+              </Button>
             </motion.div>
+
 
             {/* Collaborators */}
             <motion.div variants={item}>
