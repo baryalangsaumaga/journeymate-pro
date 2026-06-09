@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Car, Bus, Footprints, Bike, AlertTriangle, ArrowRight, ArrowLeft, ArrowUp,
-  CornerUpRight, CornerUpLeft, Flag, Gauge, Route, Locate, Volume2, VolumeX,
+  Car, Bus, Footprints, Bike, ArrowRight, ArrowLeft, ArrowUp,
+  CornerUpRight, CornerUpLeft, Flag, Gauge, Route, Locate,
   UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
