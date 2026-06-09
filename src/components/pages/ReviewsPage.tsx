@@ -1,22 +1,32 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import {
   Star, ThumbsUp, MapPin, TrendingUp, Award, MessageSquare,
-  Plus, Flame, X
+  Plus, Flame, Filter, Globe,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { mockReviews, heatmapData } from "@/data/mockData";
+import { mockReviews, heatmapData, mockLocations } from "@/data/mockData";
+import { useGeolocation, distanceMeters } from "@/hooks/useGeolocation";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
+
+// Mock external reviews mixed into the feed so source filters are meaningful.
+const externalSeed = [
+  { id: "g1", userId: "ext1", userName: "Jordan M. (Google)", userAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Jordan", locationId: "l1", locationName: "Intramuros", rating: 5, comment: "Beautiful walled city. Worth a full afternoon.", images: [] as string[], timestamp: "2026-05-21T10:00:00Z", helpful: 31, source: "google" as const },
+  { id: "g2", userId: "ext2", userName: "Aria S. (Google)", userAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Aria", locationId: "l7", locationName: "Tagaytay Ridge", rating: 4, comment: "Stunning view but crowded on weekends.", images: [], timestamp: "2026-04-12T10:00:00Z", helpful: 14, source: "google" as const },
+  { id: "g3", userId: "ext3", userName: "Diego R. (TripAdvisor)", userAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Diego", locationId: "l4", locationName: "Poblacion", rating: 5, comment: "Best nightlife in Manila, hands down.", images: [], timestamp: "2026-02-02T10:00:00Z", helpful: 22, source: "google" as const },
+];
 
 function HeatmapMap() {
   const mapRef = useRef<HTMLDivElement>(null);
