@@ -366,20 +366,23 @@ export default function NavigationPage() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="absolute top-4 right-4 flex flex-col items-end gap-2 z-30"
           >
-            <MapLayerSwitcher value={mapStyle} onChange={setMapStyle} />
+            {!tripMode && <MapLayerSwitcher value={mapStyle} onChange={setMapStyle} />}
+            {!isOnline && (
+              <Badge className="bg-amber-500 text-white text-[9px] h-5">Offline mode</Badge>
+            )}
             <div className="flex flex-col gap-2">
-              <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLocate}><Locate className="w-4 h-4" /></Button>
-              <Button variant="outline" size="icon" className={`h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50 ${isMuted ? "text-muted-foreground" : ""}`} onClick={() => { setIsMuted(!isMuted); toast({ title: isMuted ? "🔊 Voice On" : "🔇 Voice Off" }); }}>
-                {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-              </Button>
+              {!tripMode && (
+                <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLocate}><Locate className="w-4 h-4" /></Button>
+              )}
+              <VoiceSettingsPopover value={voicePrefs} onChange={setVoicePrefs} />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Destination search — hidden after a pick to avoid disrupting the user. */}
+      {/* Destination search — hidden in trip mode and after a pick to avoid disruption. */}
       <AnimatePresence>
-        {showControls && !searchHidden && (
+        {showControls && !searchHidden && !tripMode && (
           <motion.div
             initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
             className="absolute top-4 left-4 right-16 z-30"
