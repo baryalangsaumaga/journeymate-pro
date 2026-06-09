@@ -182,7 +182,45 @@ export default function ReviewsPage() {
         </TabsContent>
 
         <TabsContent value="reviews" className="space-y-3 mt-3">
-          {mockReviews.map(review => (
+          {/* Filter bar */}
+          <motion.div variants={item}>
+            <Card className="border-0 card-elevated">
+              <CardContent className="p-3 space-y-2">
+                <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  <Filter className="w-3 h-3" /> Filters
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Select value={sortKey} onValueChange={(v) => setSortKey(v as typeof sortKey)}>
+                    <SelectTrigger className="h-8 text-[11px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="recent" className="text-xs">Most recent</SelectItem>
+                      <SelectItem value="rating-high" className="text-xs">Highest rated</SelectItem>
+                      <SelectItem value="rating-low" className="text-xs">Lowest rated</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as typeof sourceFilter)}>
+                    <SelectTrigger className="h-8 text-[11px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">All sources</SelectItem>
+                      <SelectItem value="app" className="text-xs">App users</SelectItem>
+                      <SelectItem value="google" className="text-xs">Google / Web</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <label className="flex items-center justify-between text-[11px] px-2 py-1.5 rounded-lg bg-muted">
+                  <span className="text-muted-foreground">Nearby user reviews only</span>
+                  <Switch checked={nearbyOnly} onCheckedChange={setNearbyOnly} />
+                </label>
+                <p className="text-[10px] text-muted-foreground text-center">{mergedReviews.length} review{mergedReviews.length === 1 ? "" : "s"}</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {mergedReviews.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-6">No reviews match these filters.</p>
+          )}
+
+          {mergedReviews.map(review => (
             <motion.div key={review.id} variants={item}>
               <Card className="border-0 card-interactive">
                 <CardContent className="p-3.5">
@@ -191,13 +229,15 @@ export default function ReviewsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <p className="text-[13px] font-semibold">{review.userName}</p>
-                        <span className="text-[10px] text-muted-foreground">
-                          {new Date(review.timestamp).toLocaleDateString()}
-                        </span>
+                        <Badge variant="outline" className="text-[9px] h-[16px] gap-0.5">
+                          {review.source === "google" ? <Globe className="w-2 h-2" /> : null}
+                          {review.source === "google" ? "Web" : "App"}
+                        </Badge>
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <MapPin className="w-3 h-3 text-muted-foreground" />
                         <span className="text-[11px] text-muted-foreground">{review.locationName}</span>
+                        <span className="text-[10px] text-muted-foreground/70">· {new Date(review.timestamp).toLocaleDateString()}</span>
                       </div>
                       <div className="flex items-center gap-0.5 mt-1.5">
                         {Array.from({ length: 5 }).map((_, i) => (
@@ -243,6 +283,7 @@ export default function ReviewsPage() {
             </motion.div>
           ))}
         </TabsContent>
+
 
         <TabsContent value="stats" className="space-y-3 mt-3">
           <motion.div variants={item}>
