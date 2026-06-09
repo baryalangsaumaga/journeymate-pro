@@ -66,7 +66,7 @@ function routeHasToll(coords: [number, number][] | undefined, mode: string) {
 export default function NavigationPage() {
   const [selectedMode, setSelectedMode] = useState<"car" | "transit" | "walk" | "bike">("car");
   const [isNavigating, setIsNavigating] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [voicePrefs, setVoicePrefs] = useState<VoicePrefs>(() => loadVoicePrefs());
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [mapStyle, setMapStyle] = useState<MapStyle>("voyager");
   const [route, setRoute] = useState<RouteResult | null>(null);
@@ -76,6 +76,16 @@ export default function NavigationPage() {
   const [tripStops, setTripStops] = useState<Location[]>([]); // multi-leg from "Start the Trip"
   const [legIdx, setLegIdx] = useState(0);
   const [searchHidden, setSearchHidden] = useState(false);
+  const [tripMode, setTripMode] = useState(false); // hides search/style/locate when launched from a trip
+  const [isOnline, setIsOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
+
+  // Persist voice prefs
+  useEffect(() => { saveVoicePrefs(voicePrefs); }, [voicePrefs]);
+  useEffect(() => {
+    const on = () => setIsOnline(true); const off = () => setIsOnline(false);
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
 
   // Real GPS
   const { fix } = useGeolocation();
@@ -84,7 +94,7 @@ export default function NavigationPage() {
     [fix?.lat, fix?.lng],
   );
   const startPoint: [number, number] = userPos ?? [14.5895, 120.9740];
-  const { speak, cancel: cancelVoice } = useVoiceGuide(!isMuted);
+  const { speak, cancel: cancelVoice } = useVoiceGuide(voicePrefs);
 
   // Weather along route (sampled at midpoint of current leg).
   const midCoord = route?.coordinates?.[Math.floor(route.coordinates.length / 2)];
