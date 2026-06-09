@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Car, Bus, Footprints, Bike, AlertTriangle, ArrowRight, ArrowLeft, ArrowUp,
-  CornerUpRight, CornerUpLeft, Flag, Gauge, Route, Locate, Volume2, VolumeX,
+  Car, Bus, Footprints, Bike, ArrowRight, ArrowLeft, ArrowUp,
+  CornerUpRight, CornerUpLeft, Flag, Gauge, Route, Locate,
   UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,9 +17,11 @@ import { RouteDetailsPanel } from "@/components/travel/RouteDetailsPanel";
 import { MapLayerSwitcher, type MapStyle } from "@/components/travel/MapLayerSwitcher";
 import { PlaceSearchInput } from "@/components/travel/PlaceSearchInput";
 import { useGeolocation, distanceMeters } from "@/hooks/useGeolocation";
-import { useVoiceGuide } from "@/hooks/useVoiceGuide";
+import { useVoiceGuide, loadVoicePrefs, saveVoicePrefs, type VoicePrefs } from "@/hooks/useVoiceGuide";
+import { VoiceSettingsPopover } from "@/components/travel/VoiceSettingsPopover";
 import { useWeather } from "@/hooks/useWeather";
 import { tripSession } from "@/lib/tripSession";
+import { saveOfflineRoute, loadOfflineRoute } from "@/lib/offlineRoute";
 import type { Location } from "@/types/travel";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -64,7 +66,7 @@ function routeHasToll(coords: [number, number][] | undefined, mode: string) {
 export default function NavigationPage() {
   const [selectedMode, setSelectedMode] = useState<"car" | "transit" | "walk" | "bike">("car");
   const [isNavigating, setIsNavigating] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [voicePrefs, setVoicePrefs] = useState<VoicePrefs>(() => loadVoicePrefs());
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [mapStyle, setMapStyle] = useState<MapStyle>("voyager");
   const [route, setRoute] = useState<RouteResult | null>(null);
@@ -74,6 +76,16 @@ export default function NavigationPage() {
   const [tripStops, setTripStops] = useState<Location[]>([]); // multi-leg from "Start the Trip"
   const [legIdx, setLegIdx] = useState(0);
   const [searchHidden, setSearchHidden] = useState(false);
+  const [tripMode, setTripMode] = useState(false); // hides search/style/locate when launched from a trip
+  const [isOnline, setIsOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
+
+  // Persist voice prefs
+  useEffect(() => { saveVoicePrefs(voicePrefs); }, [voicePrefs]);
+  useEffect(() => {
+    const on = () => setIsOnline(true); const off = () => setIsOnline(false);
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
 
   // Real GPS
   const { fix } = useGeolocation();
@@ -82,7 +94,7 @@ export default function NavigationPage() {
     [fix?.lat, fix?.lng],
   );
   const startPoint: [number, number] = userPos ?? [14.5895, 120.9740];
-  const { speak, cancel: cancelVoice } = useVoiceGuide(!isMuted);
+  const { speak, cancel: cancelVoice } = useVoiceGuide(voicePrefs);
 
   // Weather along route (sampled at midpoint of current leg).
   const midCoord = route?.coordinates?.[Math.floor(route.coordinates.length / 2)];
@@ -111,6 +123,7 @@ export default function NavigationPage() {
       setTripStops(trip.stops.map(s => s.location));
       setDestination(trip.stops[0].location);
       setSearchHidden(true);
+      setTripMode(true);
       toast({ title: "🧭 Trip Loaded", description: `${trip.stops.length} stops · ${trip.pace} pace` });
       return;
     }
@@ -118,8 +131,30 @@ export default function NavigationPage() {
     if (dest) {
       setDestination(dest.location);
       setSearchHidden(true);
+      setTripMode(false);
+      return;
+    }
+    // No hand-off → if offline, restore the last cached route so navigation still works.
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const cached = loadOfflineRoute();
+      if (cached?.destination && cached.route) {
+        setDestination(cached.destination);
+        setRoute(cached.route);
+        setSearchHidden(true);
+        toast({ title: "📴 Offline Route Loaded", description: cached.destination.name });
+      }
     }
   }, []);
+
+  // Cache route + nearby places for offline use whenever a new route is computed.
+  useEffect(() => {
+    if (!route || !destination) return;
+    const nearby = mockLocations.filter(l =>
+      route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
+    );
+    saveOfflineRoute({ destination, route, nearby, mode: selectedMode });
+  }, [route, destination, selectedMode]);
+
 
   // Init map
   useEffect(() => {
@@ -331,20 +366,23 @@ export default function NavigationPage() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="absolute top-4 right-4 flex flex-col items-end gap-2 z-30"
           >
-            <MapLayerSwitcher value={mapStyle} onChange={setMapStyle} />
+            {!tripMode && <MapLayerSwitcher value={mapStyle} onChange={setMapStyle} />}
+            {!isOnline && (
+              <Badge className="bg-amber-500 text-white text-[9px] h-5">Offline mode</Badge>
+            )}
             <div className="flex flex-col gap-2">
-              <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLocate}><Locate className="w-4 h-4" /></Button>
-              <Button variant="outline" size="icon" className={`h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50 ${isMuted ? "text-muted-foreground" : ""}`} onClick={() => { setIsMuted(!isMuted); toast({ title: isMuted ? "🔊 Voice On" : "🔇 Voice Off" }); }}>
-                {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-              </Button>
+              {!tripMode && (
+                <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLocate}><Locate className="w-4 h-4" /></Button>
+              )}
+              <VoiceSettingsPopover value={voicePrefs} onChange={setVoicePrefs} />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Destination search — hidden after a pick to avoid disrupting the user. */}
+      {/* Destination search — hidden in trip mode and after a pick to avoid disruption. */}
       <AnimatePresence>
-        {showControls && !searchHidden && (
+        {showControls && !searchHidden && !tripMode && (
           <motion.div
             initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
             className="absolute top-4 left-4 right-16 z-30"

@@ -1,22 +1,32 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import {
   Star, ThumbsUp, MapPin, TrendingUp, Award, MessageSquare,
-  Plus, Flame, X
+  Plus, Flame, Filter, Globe,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { mockReviews, heatmapData } from "@/data/mockData";
+import { mockReviews, heatmapData, mockLocations } from "@/data/mockData";
+import { useGeolocation, distanceMeters } from "@/hooks/useGeolocation";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
+
+// Mock external reviews mixed into the feed so source filters are meaningful.
+const externalSeed = [
+  { id: "g1", userId: "ext1", userName: "Jordan M. (Google)", userAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Jordan", locationId: "l1", locationName: "Intramuros", rating: 5, comment: "Beautiful walled city. Worth a full afternoon.", images: [] as string[], timestamp: "2026-05-21T10:00:00Z", helpful: 31, source: "google" as const },
+  { id: "g2", userId: "ext2", userName: "Aria S. (Google)", userAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Aria", locationId: "l7", locationName: "Tagaytay Ridge", rating: 4, comment: "Stunning view but crowded on weekends.", images: [], timestamp: "2026-04-12T10:00:00Z", helpful: 14, source: "google" as const },
+  { id: "g3", userId: "ext3", userName: "Diego R. (TripAdvisor)", userAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Diego", locationId: "l4", locationName: "Poblacion", rating: 5, comment: "Best nightlife in Manila, hands down.", images: [], timestamp: "2026-02-02T10:00:00Z", helpful: 22, source: "google" as const },
+];
 
 function HeatmapMap() {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -50,6 +60,30 @@ export default function ReviewsPage() {
   const [helpfulIds, setHelpfulIds] = useState<string[]>([]);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
+
+  // Filters for the Reviews tab
+  const [sortKey, setSortKey] = useState<"recent" | "rating-high" | "rating-low">("recent");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "app" | "google">("all");
+  const [nearbyOnly, setNearbyOnly] = useState(false);
+  const { fix } = useGeolocation();
+
+  const mergedReviews = useMemo(() => {
+    const app = mockReviews.map(r => ({ ...r, source: "app" as const }));
+    let list = [...app, ...externalSeed];
+    if (sourceFilter !== "all") list = list.filter(r => r.source === sourceFilter);
+    if (nearbyOnly && fix) {
+      list = list.filter(r => {
+        const loc = mockLocations.find(l => l.id === r.locationId || l.name === r.locationName);
+        if (!loc) return false;
+        return distanceMeters({ lat: fix.lat, lng: fix.lng }, { lat: loc.lat, lng: loc.lng }) < 75000;
+      });
+    }
+    if (sortKey === "recent") list.sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp));
+    else if (sortKey === "rating-high") list.sort((a, b) => b.rating - a.rating);
+    else list.sort((a, b) => a.rating - b.rating);
+    return list;
+  }, [sortKey, sourceFilter, nearbyOnly, fix?.lat, fix?.lng]);
+
 
   const handleSubmitReview = () => {
     if (!reviewText.trim() || !reviewLocation.trim()) return;
@@ -148,7 +182,45 @@ export default function ReviewsPage() {
         </TabsContent>
 
         <TabsContent value="reviews" className="space-y-3 mt-3">
-          {mockReviews.map(review => (
+          {/* Filter bar */}
+          <motion.div variants={item}>
+            <Card className="border-0 card-elevated">
+              <CardContent className="p-3 space-y-2">
+                <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  <Filter className="w-3 h-3" /> Filters
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Select value={sortKey} onValueChange={(v) => setSortKey(v as typeof sortKey)}>
+                    <SelectTrigger className="h-8 text-[11px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="recent" className="text-xs">Most recent</SelectItem>
+                      <SelectItem value="rating-high" className="text-xs">Highest rated</SelectItem>
+                      <SelectItem value="rating-low" className="text-xs">Lowest rated</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as typeof sourceFilter)}>
+                    <SelectTrigger className="h-8 text-[11px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">All sources</SelectItem>
+                      <SelectItem value="app" className="text-xs">App users</SelectItem>
+                      <SelectItem value="google" className="text-xs">Google / Web</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <label className="flex items-center justify-between text-[11px] px-2 py-1.5 rounded-lg bg-muted">
+                  <span className="text-muted-foreground">Nearby user reviews only</span>
+                  <Switch checked={nearbyOnly} onCheckedChange={setNearbyOnly} />
+                </label>
+                <p className="text-[10px] text-muted-foreground text-center">{mergedReviews.length} review{mergedReviews.length === 1 ? "" : "s"}</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {mergedReviews.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-6">No reviews match these filters.</p>
+          )}
+
+          {mergedReviews.map(review => (
             <motion.div key={review.id} variants={item}>
               <Card className="border-0 card-interactive">
                 <CardContent className="p-3.5">
@@ -157,13 +229,15 @@ export default function ReviewsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <p className="text-[13px] font-semibold">{review.userName}</p>
-                        <span className="text-[10px] text-muted-foreground">
-                          {new Date(review.timestamp).toLocaleDateString()}
-                        </span>
+                        <Badge variant="outline" className="text-[9px] h-[16px] gap-0.5">
+                          {review.source === "google" ? <Globe className="w-2 h-2" /> : null}
+                          {review.source === "google" ? "Web" : "App"}
+                        </Badge>
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <MapPin className="w-3 h-3 text-muted-foreground" />
                         <span className="text-[11px] text-muted-foreground">{review.locationName}</span>
+                        <span className="text-[10px] text-muted-foreground/70">· {new Date(review.timestamp).toLocaleDateString()}</span>
                       </div>
                       <div className="flex items-center gap-0.5 mt-1.5">
                         {Array.from({ length: 5 }).map((_, i) => (
@@ -209,6 +283,7 @@ export default function ReviewsPage() {
             </motion.div>
           ))}
         </TabsContent>
+
 
         <TabsContent value="stats" className="space-y-3 mt-3">
           <motion.div variants={item}>

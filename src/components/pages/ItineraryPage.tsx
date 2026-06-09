@@ -75,33 +75,50 @@ export default function ItineraryPage() {
     }
   };
 
+  const buildItineraryPDF = () => generatePDF({
+    title: selectedTrip.title,
+    subtitle: `${selectedTrip.startDate} → ${selectedTrip.endDate} · ${selectedTrip.stops.length} stops`,
+    sections: [
+      {
+        title: "Overview",
+        rows: [
+          ["Status", selectedTrip.status],
+          ["Description", selectedTrip.description || "—"],
+          ["Collaborators", selectedTrip.collaborators.map(c => c.name).join(", ") || "Solo"],
+        ],
+      },
+      {
+        title: "Route Summary",
+        rows: [
+          ["Total stops", String(selectedTrip.stops.length)],
+          ["Transit modes", Array.from(new Set(selectedTrip.stops.map(s => s.transitType))).join(", ") || "—"],
+          ["First stop", selectedTrip.stops[0]?.location.name ?? "—"],
+          ["Final stop", selectedTrip.stops[selectedTrip.stops.length - 1]?.location.name ?? "—"],
+        ],
+      },
+      {
+        title: "Itinerary",
+        rows: selectedTrip.stops.map((s, i) => [
+          `Stop ${i + 1} · ${s.transitType}`,
+          `${s.location.name} — ${s.arrivalTime} → ${s.departureTime}${s.notes ? ` · ${s.notes}` : ""}`,
+        ]),
+      },
+    ],
+    footer: `TrailSync · ${selectedTrip.title}`,
+  });
+
+  // One-tap: just save the printable itinerary PDF.
+  const handleExportPDF = () => {
+    const doc = buildItineraryPDF();
+    doc.save(`${selectedTrip.title.replace(/\s+/g, "_")}_itinerary.pdf`);
+    toast({ title: "📄 Itinerary Exported", description: "PDF ready to print or share." });
+  };
+
+  // Full "save offline" — PDF + JSON + cache locations for offline reuse.
   const handleDownload = () => {
-    // 1. Generate a printable PDF of the itinerary.
-    const doc = generatePDF({
-      title: selectedTrip.title,
-      subtitle: `${selectedTrip.startDate} → ${selectedTrip.endDate} · ${selectedTrip.stops.length} stops`,
-      sections: [
-        {
-          title: "Overview",
-          rows: [
-            ["Status", selectedTrip.status],
-            ["Description", selectedTrip.description || "—"],
-            ["Collaborators", selectedTrip.collaborators.map(c => c.name).join(", ") || "Solo"],
-          ],
-        },
-        {
-          title: "Itinerary",
-          rows: selectedTrip.stops.map((s, i) => [
-            `Stop ${i + 1} · ${s.transitType}`,
-            `${s.location.name} — ${s.arrivalTime} → ${s.departureTime}${s.notes ? ` · ${s.notes}` : ""}`,
-          ]),
-        },
-      ],
-      footer: `TrailSync · ${selectedTrip.title}`,
-    });
+    const doc = buildItineraryPDF();
     doc.save(`${selectedTrip.title.replace(/\s+/g, "_")}_itinerary.pdf`);
 
-    // 2. Cache the trip locally for offline use + also export raw JSON.
     repo.offlineTrips.add(selectedTrip.id);
     repo.cms.locations.save([
       ...repo.cms.locations.list(),
@@ -437,15 +454,24 @@ export default function ItineraryPage() {
               </motion.div>
             )}
 
-            {/* Start Trip — hand off to NavigationPage as personal tour guide. */}
-            <motion.div variants={item}>
+            {/* One-tap PDF export + Start Trip */}
+            <motion.div variants={item} className="grid grid-cols-[1fr_auto] gap-2">
               <Button
-                className="w-full h-12 rounded-2xl font-display font-bold shadow-travel text-sm gap-2 glow-primary"
+                className="h-12 rounded-2xl font-display font-bold shadow-travel text-sm gap-2 glow-primary"
                 onClick={() => handleStartTrip()}
               >
                 <Play className="w-4 h-4 fill-current" /> Start the Trip
               </Button>
+              <Button
+                variant="outline"
+                className="h-12 rounded-2xl font-semibold text-xs gap-1.5 px-4"
+                onClick={handleExportPDF}
+                title="Export printable itinerary PDF"
+              >
+                <Download className="w-4 h-4" /> PDF
+              </Button>
             </motion.div>
+
 
             {/* Collaborators */}
             <motion.div variants={item}>
