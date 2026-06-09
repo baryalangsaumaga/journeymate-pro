@@ -61,6 +61,30 @@ export default function ReviewsPage() {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
 
+  // Filters for the Reviews tab
+  const [sortKey, setSortKey] = useState<"recent" | "rating-high" | "rating-low">("recent");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "app" | "google">("all");
+  const [nearbyOnly, setNearbyOnly] = useState(false);
+  const { fix } = useGeolocation();
+
+  const mergedReviews = useMemo(() => {
+    const app = mockReviews.map(r => ({ ...r, source: "app" as const }));
+    let list = [...app, ...externalSeed];
+    if (sourceFilter !== "all") list = list.filter(r => r.source === sourceFilter);
+    if (nearbyOnly && fix) {
+      list = list.filter(r => {
+        const loc = mockLocations.find(l => l.id === r.locationId || l.name === r.locationName);
+        if (!loc) return false;
+        return distanceMeters({ lat: fix.lat, lng: fix.lng }, { lat: loc.lat, lng: loc.lng }) < 75000;
+      });
+    }
+    if (sortKey === "recent") list.sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp));
+    else if (sortKey === "rating-high") list.sort((a, b) => b.rating - a.rating);
+    else list.sort((a, b) => a.rating - b.rating);
+    return list;
+  }, [sortKey, sourceFilter, nearbyOnly, fix?.lat, fix?.lng]);
+
+
   const handleSubmitReview = () => {
     if (!reviewText.trim() || !reviewLocation.trim()) return;
     toast({ title: "⭐ Review Published!", description: `Your review of "${reviewLocation}" has been posted.` });
