@@ -123,6 +123,7 @@ export default function NavigationPage() {
       setTripStops(trip.stops.map(s => s.location));
       setDestination(trip.stops[0].location);
       setSearchHidden(true);
+      setTripMode(true);
       toast({ title: "🧭 Trip Loaded", description: `${trip.stops.length} stops · ${trip.pace} pace` });
       return;
     }
@@ -130,8 +131,30 @@ export default function NavigationPage() {
     if (dest) {
       setDestination(dest.location);
       setSearchHidden(true);
+      setTripMode(false);
+      return;
+    }
+    // No hand-off → if offline, restore the last cached route so navigation still works.
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const cached = loadOfflineRoute();
+      if (cached?.destination && cached.route) {
+        setDestination(cached.destination);
+        setRoute(cached.route);
+        setSearchHidden(true);
+        toast({ title: "📴 Offline Route Loaded", description: cached.destination.name });
+      }
     }
   }, []);
+
+  // Cache route + nearby places for offline use whenever a new route is computed.
+  useEffect(() => {
+    if (!route || !destination) return;
+    const nearby = mockLocations.filter(l =>
+      route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
+    );
+    saveOfflineRoute({ destination, route, nearby, mode: selectedMode });
+  }, [route, destination, selectedMode]);
+
 
   // Init map
   useEffect(() => {
