@@ -17,9 +17,11 @@ import { RouteDetailsPanel } from "@/components/travel/RouteDetailsPanel";
 import { MapLayerSwitcher, type MapStyle } from "@/components/travel/MapLayerSwitcher";
 import { PlaceSearchInput } from "@/components/travel/PlaceSearchInput";
 import { useGeolocation, distanceMeters } from "@/hooks/useGeolocation";
-import { useVoiceGuide } from "@/hooks/useVoiceGuide";
+import { useVoiceGuide, loadVoicePrefs, saveVoicePrefs, type VoicePrefs } from "@/hooks/useVoiceGuide";
+import { VoiceSettingsPopover } from "@/components/travel/VoiceSettingsPopover";
 import { useWeather } from "@/hooks/useWeather";
 import { tripSession } from "@/lib/tripSession";
+import { saveOfflineRoute, loadOfflineRoute } from "@/lib/offlineRoute";
 import type { Location } from "@/types/travel";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
