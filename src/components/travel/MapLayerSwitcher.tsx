@@ -1,8 +1,9 @@
-// Tiny segmented control for switching basemap styles. Used in the map page.
-import { Layers } from "lucide-react";
+// Popover layer switcher — Standard / Light / Dark / Satellite with icons.
+import { Layers, Map as MapIcon, Sun, Moon, Satellite, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-export type MapStyle = "voyager" | "dark" | "light";
+export type MapStyle = "voyager" | "light" | "dark" | "satellite";
 
 interface Props {
   value: MapStyle;
@@ -10,27 +11,46 @@ interface Props {
   className?: string;
 }
 
-const STYLES: { id: MapStyle; label: string }[] = [
-  { id: "voyager", label: "Std" },
-  { id: "light", label: "Lite" },
-  { id: "dark", label: "Dark" },
+const STYLES: { id: MapStyle; label: string; Icon: typeof MapIcon }[] = [
+  { id: "voyager", label: "Standard", Icon: MapIcon },
+  { id: "light", label: "Light", Icon: Sun },
+  { id: "dark", label: "Dark", Icon: Moon },
+  { id: "satellite", label: "Satellite", Icon: Satellite },
 ];
 
 export function MapLayerSwitcher({ value, onChange, className = "" }: Props) {
+  const active = STYLES.find(s => s.id === value) ?? STYLES[0];
+  const ActiveIcon = active.Icon;
   return (
-    <div className={`inline-flex items-center gap-0.5 p-0.5 rounded-xl bg-card/95 backdrop-blur-sm border border-border/50 shadow-card-hover ${className}`}>
-      <Layers className="w-3.5 h-3.5 text-muted-foreground ml-1.5" />
-      {STYLES.map(s => (
+    <Popover>
+      <PopoverTrigger asChild>
         <Button
-          key={s.id}
-          variant="ghost"
           size="sm"
-          className={`h-7 px-2 text-[10px] font-semibold rounded-lg ${value === s.id ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-          onClick={() => onChange(s.id)}
+          variant="outline"
+          className={`h-9 px-2.5 gap-1.5 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50 ${className}`}
+          aria-label="Change map style"
         >
-          {s.label}
+          <Layers className="w-3.5 h-3.5 text-primary" />
+          <ActiveIcon className="w-3.5 h-3.5" />
+          <span className="text-[10px] font-semibold">{active.label}</span>
         </Button>
-      ))}
-    </div>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-44 p-1.5">
+        <p className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Map Style</p>
+        {STYLES.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            onClick={() => onChange(id)}
+            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              value === id ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+            <span className="flex-1 text-left">{label}</span>
+            {value === id && <Check className="w-3 h-3" />}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }

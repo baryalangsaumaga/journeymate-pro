@@ -114,6 +114,7 @@ export default function NavigationPage() {
     voyager: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
     light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    satellite: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
   };
 
   // Hand-off from Itinerary "Start the Trip"
@@ -171,6 +172,12 @@ export default function NavigationPage() {
 
   // Switch tiles
   useEffect(() => { tileRef.current?.setUrl(tileUrls[mapStyle]); }, [mapStyle]);
+
+  // When tilt mode flips, give Leaflet a beat to recompute its viewport.
+  useEffect(() => {
+    const t = setTimeout(() => mapInstance.current?.invalidateSize(), 750);
+    return () => clearTimeout(t);
+  }, [isNavigating]);
 
   // Update start marker as GPS arrives
   useEffect(() => {
@@ -357,8 +364,16 @@ export default function NavigationPage() {
   const showControls = !sheetExpanded;
 
   return (
-    <div className="relative h-[calc(100dvh-7rem)]">
-      <div className="absolute inset-0 z-0" ref={mapRef} />
+    <div className="relative h-[calc(100dvh-7rem)] overflow-hidden" style={{ perspective: "1200px" }}>
+      <div
+        className="absolute inset-0 z-0 transition-transform duration-700 ease-out origin-bottom"
+        ref={mapRef}
+        style={{
+          transform: isNavigating ? "rotateX(55deg) scale(1.35) translateY(8%)" : "none",
+          transformOrigin: "50% 75%",
+        }}
+      />
+
 
       <AnimatePresence>
         {showControls && (
@@ -459,12 +474,13 @@ export default function NavigationPage() {
 
       <motion.div
         className="absolute bottom-0 left-0 right-0 glass-ultra rounded-t-3xl z-30 border-t border-border/30"
-        animate={{ height: sheetExpanded ? "auto" : 52 }}
+        animate={{ height: sheetExpanded ? "auto" : 28 }}
         transition={{ type: "spring", stiffness: 400, damping: 35 }}
       >
-        <button className="flex justify-center w-full py-2" onClick={() => setSheetExpanded(!sheetExpanded)}>
+        <button className="flex justify-center w-full py-1.5" onClick={() => setSheetExpanded(!sheetExpanded)} aria-label="Toggle panel">
           <div className="w-9 h-1 rounded-full bg-border" />
         </button>
+
 
         <AnimatePresence>
           {sheetExpanded && (
