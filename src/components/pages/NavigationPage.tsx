@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Car, Bus, Footprints, Bike, ArrowRight, ArrowLeft, ArrowUp,
   CornerUpRight, CornerUpLeft, Flag, Gauge, Route, Locate,
-  UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2,
+  UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2, Lock, Unlock, Box,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,10 +36,16 @@ const dot = (color: string, size = 12) => L.divIcon({
   html: `<div style="width:${size}px;height:${size}px;background:${color};border-radius:50%;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3)"></div>`,
   iconSize: [size, size], iconAnchor: [size/2, size/2],
 });
-const carIcon = () => L.divIcon({
+const carIcon = (heading: number | null) => L.divIcon({
   className: "",
-  html: `<div style="width:22px;height:22px;background:hsl(162,72%,40%);border-radius:50%;border:3px solid white;box-shadow:0 0 0 4px hsl(162,72%,40%,.25),0 2px 8px rgba(0,0,0,0.4)"></div>`,
-  iconSize: [22, 22], iconAnchor: [11, 11],
+  html: `
+    <div style="position:relative;width:32px;height:32px;">
+      <div style="position:absolute;inset:0;border-radius:50%;background:hsl(162,72%,40%);border:3px solid white;box-shadow:0 0 0 5px hsla(162,72%,40%,.25),0 2px 8px rgba(0,0,0,.4);"></div>
+      <div style="position:absolute;left:50%;top:-10px;transform:translateX(-50%) rotate(${heading ?? 0}deg);transform-origin:50% 26px;">
+        <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid hsl(162,72%,30%);filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));"></div>
+      </div>
+    </div>`,
+  iconSize: [32, 32], iconAnchor: [16, 16],
 });
 
 const transitModes = [
@@ -78,6 +84,7 @@ export default function NavigationPage() {
   const [searchHidden, setSearchHidden] = useState(false);
   const [tripMode, setTripMode] = useState(false); // hides search/style/locate when launched from a trip
   const [isOnline, setIsOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
+  const [tiltLocked, setTiltLocked] = useState(false); // when true, tilt stays flat during navigation
 
   // Persist voice prefs
   useEffect(() => { saveVoicePrefs(voicePrefs); }, [voicePrefs]);
@@ -254,11 +261,12 @@ export default function NavigationPage() {
     const map = mapInstance.current;
     if (!map) return;
 
-    // Update car marker = user position
+    // Update car marker = user position (with heading-aware arrow)
     if (!carMarkerRef.current) {
-      carMarkerRef.current = L.marker(userPos, { icon: carIcon(), zIndexOffset: 1000 }).addTo(map);
+      carMarkerRef.current = L.marker(userPos, { icon: carIcon(fix?.heading ?? null), zIndexOffset: 1000 }).addTo(map);
     } else {
       carMarkerRef.current.setLatLng(userPos);
+      carMarkerRef.current.setIcon(carIcon(fix?.heading ?? null));
     }
     map.setView(userPos, 16, { animate: true });
 
@@ -360,44 +368,65 @@ export default function NavigationPage() {
   const ManeuverIcon = maneuverIcon(nextStep?.maneuver ?? currentStep?.maneuver, nextStep?.modifier ?? currentStep?.modifier);
   const showToll = routeHasToll(route?.coordinates, selectedMode);
 
-  // Hide map controls when the sheet is expanded (so they don't overlap the hamburger drawer or sheet content).
-  const showControls = !sheetExpanded;
+  // Always show controls — users need GPS recenter and style switching at all times.
+  const tilt3D = isNavigating && !tiltLocked;
 
   return (
-    <div className="relative h-[calc(100dvh-7rem)] overflow-hidden" style={{ perspective: "1200px" }}>
-      <div
-        className="absolute inset-0 z-0 transition-transform duration-700 ease-out origin-bottom"
-        ref={mapRef}
-        style={{
-          transform: isNavigating ? "rotateX(55deg) scale(1.35) translateY(8%)" : "none",
-          transformOrigin: "50% 75%",
-        }}
-      />
+    <div className="relative h-[calc(100dvh-7rem)] overflow-hidden">
+      {/* Map layer — isolated 3D context so siblings aren't pushed behind in stacking */}
+      <div className="absolute inset-0 z-0 overflow-hidden" style={{ perspective: "1400px", perspectiveOrigin: "50% 85%" }}>
+        <div
+          className="absolute inset-0 transition-transform duration-700 ease-out will-change-transform"
+          ref={mapRef}
+          style={{
+            transform: tilt3D
+              ? "translateY(12%) scale(1.7) rotateX(55deg)"
+              : "translateY(0) scale(1) rotateX(0deg)",
+            transformOrigin: "50% 75%",
+          }}
+        />
+      </div>
 
-
-      <AnimatePresence>
-        {showControls && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="absolute top-4 right-4 flex flex-col items-end gap-2 z-30"
-          >
-            {!tripMode && <MapLayerSwitcher value={mapStyle} onChange={setMapStyle} />}
-            {!isOnline && (
-              <Badge className="bg-amber-500 text-white text-[9px] h-5">Offline mode</Badge>
+      {/* Controls layer — flat, never affected by 3D, never clipped */}
+      <div className="pointer-events-none absolute inset-0 z-30">
+        <div className="pointer-events-auto absolute top-3 right-3 flex flex-col items-end gap-2 max-w-[calc(100%-1.5rem)]">
+          {!tripMode && <MapLayerSwitcher value={mapStyle} onChange={setMapStyle} />}
+          {!isOnline && (
+            <Badge className="bg-amber-500 text-white text-[9px] h-5">Offline mode</Badge>
+          )}
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="default"
+              size="icon"
+              className="h-11 w-11 rounded-full shadow-travel glow-primary"
+              onClick={handleLocate}
+              aria-label="Recenter on my location"
+              title="Recenter on my location"
+            >
+              <Locate className="w-5 h-5" />
+            </Button>
+            {isNavigating && (
+              <Button
+                variant="outline"
+                size="icon"
+                className={`h-10 w-10 rounded-full backdrop-blur-sm shadow-card-hover border-border/50 ${tiltLocked ? "bg-card/95" : "bg-primary text-primary-foreground"}`}
+                onClick={() => setTiltLocked(v => !v)}
+                aria-label={tiltLocked ? "Unlock 3D tilt" : "Lock view flat"}
+                title={tiltLocked ? "Unlock 3D tilt" : "Lock view flat"}
+              >
+                {tiltLocked ? <Lock className="w-4 h-4" /> : <Box className="w-4 h-4" />}
+              </Button>
             )}
-            <div className="flex flex-col gap-2">
-              {!tripMode && (
-                <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLocate}><Locate className="w-4 h-4" /></Button>
-              )}
-              <VoiceSettingsPopover value={voicePrefs} onChange={setVoicePrefs} />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <VoiceSettingsPopover value={voicePrefs} onChange={setVoicePrefs} />
+          </div>
+        </div>
+      </div>
+
+
 
       {/* Destination search — hidden in trip mode and after a pick to avoid disruption. */}
       <AnimatePresence>
-        {showControls && !searchHidden && !tripMode && (
+        {!searchHidden && !tripMode && (
           <motion.div
             initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
             className="absolute top-4 left-4 right-16 z-30"
@@ -409,7 +438,7 @@ export default function NavigationPage() {
             />
           </motion.div>
         )}
-        {showControls && searchHidden && destination && (
+        {searchHidden && destination && (
           <motion.div
             key="dest-pill"
             initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
