@@ -84,6 +84,7 @@ export default function NavigationPage() {
   const [searchHidden, setSearchHidden] = useState(false);
   const [tripMode, setTripMode] = useState(false); // hides search/style/locate when launched from a trip
   const [isOnline, setIsOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
+  const [tiltLocked, setTiltLocked] = useState(false); // when true, tilt stays flat during navigation
 
   // Persist voice prefs
   useEffect(() => { saveVoicePrefs(voicePrefs); }, [voicePrefs]);
