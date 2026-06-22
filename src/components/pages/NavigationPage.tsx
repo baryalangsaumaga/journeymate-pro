@@ -260,11 +260,12 @@ export default function NavigationPage() {
     const map = mapInstance.current;
     if (!map) return;
 
-    // Update car marker = user position
+    // Update car marker = user position (with heading-aware arrow)
     if (!carMarkerRef.current) {
-      carMarkerRef.current = L.marker(userPos, { icon: carIcon(), zIndexOffset: 1000 }).addTo(map);
+      carMarkerRef.current = L.marker(userPos, { icon: carIcon(fix?.heading ?? null), zIndexOffset: 1000 }).addTo(map);
     } else {
       carMarkerRef.current.setLatLng(userPos);
+      carMarkerRef.current.setIcon(carIcon(fix?.heading ?? null));
     }
     map.setView(userPos, 16, { animate: true });
 
