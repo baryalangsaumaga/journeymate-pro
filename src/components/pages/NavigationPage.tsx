@@ -426,7 +426,7 @@ export default function NavigationPage() {
 
       {/* Destination search — hidden in trip mode and after a pick to avoid disruption. */}
       <AnimatePresence>
-        {showControls && !searchHidden && !tripMode && (
+        {!searchHidden && !tripMode && (
           <motion.div
             initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
             className="absolute top-4 left-4 right-16 z-30"
