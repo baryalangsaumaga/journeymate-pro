@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Car, Bus, Footprints, Bike, ArrowRight, ArrowLeft, ArrowUp,
   CornerUpRight, CornerUpLeft, Flag, Gauge, Route, Locate,
-  UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2,
+  UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2, Lock, Unlock, Box,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
