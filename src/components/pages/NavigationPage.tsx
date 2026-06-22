@@ -368,40 +368,61 @@ export default function NavigationPage() {
   const ManeuverIcon = maneuverIcon(nextStep?.maneuver ?? currentStep?.maneuver, nextStep?.modifier ?? currentStep?.modifier);
   const showToll = routeHasToll(route?.coordinates, selectedMode);
 
-  // Hide map controls when the sheet is expanded (so they don't overlap the hamburger drawer or sheet content).
-  const showControls = !sheetExpanded;
+  // Always show controls — users need GPS recenter and style switching at all times.
+  const tilt3D = isNavigating && !tiltLocked;
 
   return (
-    <div className="relative h-[calc(100dvh-7rem)] overflow-hidden" style={{ perspective: "1200px" }}>
-      <div
-        className="absolute inset-0 z-0 transition-transform duration-700 ease-out origin-bottom"
-        ref={mapRef}
-        style={{
-          transform: isNavigating ? "rotateX(55deg) scale(1.35) translateY(8%)" : "none",
-          transformOrigin: "50% 75%",
-        }}
-      />
+    <div className="relative h-[calc(100dvh-7rem)] overflow-hidden">
+      {/* Map layer — isolated 3D context so siblings aren't pushed behind in stacking */}
+      <div className="absolute inset-0 z-0 overflow-hidden" style={{ perspective: "1400px", perspectiveOrigin: "50% 85%" }}>
+        <div
+          className="absolute inset-0 transition-transform duration-700 ease-out will-change-transform"
+          ref={mapRef}
+          style={{
+            transform: tilt3D
+              ? "translateY(12%) scale(1.7) rotateX(55deg)"
+              : "translateY(0) scale(1) rotateX(0deg)",
+            transformOrigin: "50% 75%",
+          }}
+        />
+      </div>
 
-
-      <AnimatePresence>
-        {showControls && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="absolute top-4 right-4 flex flex-col items-end gap-2 z-30"
-          >
-            {!tripMode && <MapLayerSwitcher value={mapStyle} onChange={setMapStyle} />}
-            {!isOnline && (
-              <Badge className="bg-amber-500 text-white text-[9px] h-5">Offline mode</Badge>
+      {/* Controls layer — flat, never affected by 3D, never clipped */}
+      <div className="pointer-events-none absolute inset-0 z-30">
+        <div className="pointer-events-auto absolute top-3 right-3 flex flex-col items-end gap-2 max-w-[calc(100%-1.5rem)]">
+          {!tripMode && <MapLayerSwitcher value={mapStyle} onChange={setMapStyle} />}
+          {!isOnline && (
+            <Badge className="bg-amber-500 text-white text-[9px] h-5">Offline mode</Badge>
+          )}
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="default"
+              size="icon"
+              className="h-11 w-11 rounded-full shadow-travel glow-primary"
+              onClick={handleLocate}
+              aria-label="Recenter on my location"
+              title="Recenter on my location"
+            >
+              <Locate className="w-5 h-5" />
+            </Button>
+            {isNavigating && (
+              <Button
+                variant="outline"
+                size="icon"
+                className={`h-10 w-10 rounded-full backdrop-blur-sm shadow-card-hover border-border/50 ${tiltLocked ? "bg-card/95" : "bg-primary text-primary-foreground"}`}
+                onClick={() => setTiltLocked(v => !v)}
+                aria-label={tiltLocked ? "Unlock 3D tilt" : "Lock view flat"}
+                title={tiltLocked ? "Unlock 3D tilt" : "Lock view flat"}
+              >
+                {tiltLocked ? <Lock className="w-4 h-4" /> : <Box className="w-4 h-4" />}
+              </Button>
             )}
-            <div className="flex flex-col gap-2">
-              {!tripMode && (
-                <Button variant="outline" size="icon" className="h-9 w-9 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50" onClick={handleLocate}><Locate className="w-4 h-4" /></Button>
-              )}
-              <VoiceSettingsPopover value={voicePrefs} onChange={setVoicePrefs} />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <VoiceSettingsPopover value={voicePrefs} onChange={setVoicePrefs} />
+          </div>
+        </div>
+      </div>
+
+
 
       {/* Destination search — hidden in trip mode and after a pick to avoid disruption. */}
       <AnimatePresence>
