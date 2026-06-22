@@ -173,6 +173,12 @@ export default function NavigationPage() {
   // Switch tiles
   useEffect(() => { tileRef.current?.setUrl(tileUrls[mapStyle]); }, [mapStyle]);
 
+  // When tilt mode flips, give Leaflet a beat to recompute its viewport.
+  useEffect(() => {
+    const t = setTimeout(() => mapInstance.current?.invalidateSize(), 750);
+    return () => clearTimeout(t);
+  }, [isNavigating]);
+
   // Update start marker as GPS arrives
   useEffect(() => {
     const map = mapInstance.current;
