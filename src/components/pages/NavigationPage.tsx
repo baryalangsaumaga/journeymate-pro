@@ -468,12 +468,13 @@ export default function NavigationPage() {
 
       <motion.div
         className="absolute bottom-0 left-0 right-0 glass-ultra rounded-t-3xl z-30 border-t border-border/30"
-        animate={{ height: sheetExpanded ? "auto" : 52 }}
+        animate={{ height: sheetExpanded ? "auto" : 28 }}
         transition={{ type: "spring", stiffness: 400, damping: 35 }}
       >
-        <button className="flex justify-center w-full py-2" onClick={() => setSheetExpanded(!sheetExpanded)}>
+        <button className="flex justify-center w-full py-1.5" onClick={() => setSheetExpanded(!sheetExpanded)} aria-label="Toggle panel">
           <div className="w-9 h-1 rounded-full bg-border" />
         </button>
+
 
         <AnimatePresence>
           {sheetExpanded && (
