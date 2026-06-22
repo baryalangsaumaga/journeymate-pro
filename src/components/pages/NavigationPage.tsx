@@ -36,10 +36,16 @@ const dot = (color: string, size = 12) => L.divIcon({
   html: `<div style="width:${size}px;height:${size}px;background:${color};border-radius:50%;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3)"></div>`,
   iconSize: [size, size], iconAnchor: [size/2, size/2],
 });
-const carIcon = () => L.divIcon({
+const carIcon = (heading: number | null) => L.divIcon({
   className: "",
-  html: `<div style="width:22px;height:22px;background:hsl(162,72%,40%);border-radius:50%;border:3px solid white;box-shadow:0 0 0 4px hsl(162,72%,40%,.25),0 2px 8px rgba(0,0,0,0.4)"></div>`,
-  iconSize: [22, 22], iconAnchor: [11, 11],
+  html: `
+    <div style="position:relative;width:32px;height:32px;">
+      <div style="position:absolute;inset:0;border-radius:50%;background:hsl(162,72%,40%);border:3px solid white;box-shadow:0 0 0 5px hsla(162,72%,40%,.25),0 2px 8px rgba(0,0,0,.4);"></div>
+      <div style="position:absolute;left:50%;top:-10px;transform:translateX(-50%) rotate(${heading ?? 0}deg);transform-origin:50% 26px;">
+        <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid hsl(162,72%,30%);filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));"></div>
+      </div>
+    </div>`,
+  iconSize: [32, 32], iconAnchor: [16, 16],
 });
 
 const transitModes = [
