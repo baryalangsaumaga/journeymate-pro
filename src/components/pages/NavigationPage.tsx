@@ -358,8 +358,16 @@ export default function NavigationPage() {
   const showControls = !sheetExpanded;
 
   return (
-    <div className="relative h-[calc(100dvh-7rem)]">
-      <div className="absolute inset-0 z-0" ref={mapRef} />
+    <div className="relative h-[calc(100dvh-7rem)] overflow-hidden" style={{ perspective: "1200px" }}>
+      <div
+        className="absolute inset-0 z-0 transition-transform duration-700 ease-out origin-bottom"
+        ref={mapRef}
+        style={{
+          transform: isNavigating ? "rotateX(55deg) scale(1.35) translateY(8%)" : "none",
+          transformOrigin: "50% 75%",
+        }}
+      />
+
 
       <AnimatePresence>
         {showControls && (
