@@ -458,7 +458,6 @@ export default function NavigationPage() {
                 </button>
               </>
             )}
-            )}
             <VoiceSettingsPopover value={voicePrefs} onChange={setVoicePrefs} />
           </div>
         </div>
