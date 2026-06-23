@@ -85,6 +85,8 @@ export default function NavigationPage() {
   const [tripMode, setTripMode] = useState(false); // hides search/style/locate when launched from a trip
   const [isOnline, setIsOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
   const [tiltLocked, setTiltLocked] = useState(false); // when true, tilt stays flat during navigation
+  const [followMode, setFollowMode] = useState(true); // auto-recenter on user as they move
+  const [keepTiltOnRecenter, setKeepTiltOnRecenter] = useState(true); // preserve 3D tilt when pressing recenter
 
   // Persist voice prefs
   useEffect(() => { saveVoicePrefs(voicePrefs); }, [voicePrefs]);
