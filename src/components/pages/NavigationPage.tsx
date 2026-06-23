@@ -293,7 +293,7 @@ export default function NavigationPage() {
       carMarkerRef.current.setLatLng(userPos);
       carMarkerRef.current.setIcon(carIcon(fix?.heading ?? null));
     }
-    map.setView(userPos, 16, { animate: true });
+    if (followMode) map.setView(userPos, 16, { animate: true });
 
     // Find nearest coordinate on route -> draw traveled polyline up to that index
     let minIdx = 0, minD = Infinity;
