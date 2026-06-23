@@ -249,12 +249,31 @@ export default function SocialPage() {
   };
 
   const roleIcons: Record<string, typeof Crown> = { owner: Crown, editor: Navigation, viewer: Eye };
-  const allUsers = [currentUser, ...collaborators.filter(c => c.lastLocation)];
+  const allUsers = tripMembers.filter(u => u.lastLocation);
 
   return (
     <div className="flex flex-col h-[calc(100dvh-7rem)]">
+      {/* Trip switcher — keeps each group chat isolated so multiple trips don't collide */}
+      <div className="px-4 pt-4 pb-2">
+        <Select value={activeTripId} onValueChange={setActiveTripId}>
+          <SelectTrigger className="h-10 rounded-xl bg-card border-border/50 text-xs font-semibold">
+            <div className="flex items-center gap-2 min-w-0">
+              <Users className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+              <SelectValue />
+            </div>
+          </SelectTrigger>
+          <SelectContent>
+            {mockTrips.map(t => (
+              <SelectItem key={t.id} value={t.id} className="text-xs">
+                {t.title} · {(t.collaborators?.length ?? 1)} members
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <Tabs defaultValue="chat" className="flex flex-col flex-1 min-h-0">
-        <div className="px-4 pt-4">
+        <div className="px-4 pt-1">
           <TabsList className="w-full h-10 p-1 rounded-xl bg-muted">
             <TabsTrigger value="chat" className="flex-1 text-xs rounded-lg font-semibold data-[state=active]:shadow-sm">Chat</TabsTrigger>
             <TabsTrigger value="members" className="flex-1 text-xs rounded-lg font-semibold data-[state=active]:shadow-sm">Members</TabsTrigger>
