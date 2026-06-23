@@ -118,6 +118,8 @@ export default function NavigationPage() {
   const destMarkerRef = useRef<L.Marker | null>(null);
   const startMarkerRef = useRef<L.Marker | null>(null);
   const eateryMarkersRef = useRef<L.Marker[]>([]);
+  const accuracyRingRef = useRef<L.Circle | null>(null);
+  const headingConeRef = useRef<L.Polygon | null>(null);
 
   const tileUrls: Record<string, string> = {
     voyager: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
