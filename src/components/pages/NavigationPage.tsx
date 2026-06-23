@@ -201,7 +201,26 @@ export default function NavigationPage() {
     } else {
       startMarkerRef.current.setLatLng(userPos);
     }
-  }, [userPos?.[0], userPos?.[1]]);
+    // GPS accuracy ring — visualizes confidence in the facing direction
+    const acc = Math.min(fix?.accuracy ?? 50, 250);
+    const confident = (fix?.accuracy ?? 9999) < 40;
+    if (!accuracyRingRef.current) {
+      accuracyRingRef.current = L.circle(userPos, {
+        radius: acc,
+        color: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
+        weight: 1,
+        fillColor: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
+        fillOpacity: 0.12,
+      }).addTo(map);
+    } else {
+      accuracyRingRef.current.setLatLng(userPos);
+      accuracyRingRef.current.setRadius(acc);
+      accuracyRingRef.current.setStyle({
+        color: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
+        fillColor: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
+      });
+    }
+  }, [userPos?.[0], userPos?.[1], fix?.accuracy]);
 
   // Update destination marker
   useEffect(() => {
