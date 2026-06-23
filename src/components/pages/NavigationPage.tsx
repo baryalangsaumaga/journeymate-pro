@@ -365,7 +365,13 @@ export default function NavigationPage() {
   const handleLocate = () => {
     if (!mapInstance.current || !userPos) return;
     mapInstance.current.setView(userPos, 16, { animate: true });
-    toast({ title: "📍 Centered on Your Location" });
+    setFollowMode(true); // re-engage follow on recenter
+    // Tilt is preserved unless the user explicitly disabled keepTiltOnRecenter
+    if (!keepTiltOnRecenter && isNavigating) setTiltLocked(true);
+    toast({
+      title: "📍 Centered on Your Location",
+      description: keepTiltOnRecenter ? "Follow-mode on · 3D tilt preserved" : "Follow-mode on",
+    });
   };
 
   const handleStartNav = () => {
@@ -376,6 +382,7 @@ export default function NavigationPage() {
       toast({ title: "🧭 Navigation Started", description: first });
       speak(first);
       setSheetExpanded(false);
+      setFollowMode(true); // always follow when starting
     } else {
       toast({ title: "⏹️ Navigation Stopped" });
       setSheetExpanded(true);
