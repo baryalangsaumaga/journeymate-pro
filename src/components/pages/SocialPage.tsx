@@ -26,14 +26,14 @@ const createUserIcon = (name: string, online: boolean) => L.divIcon({
   iconAnchor: [16, 16],
 });
 
-function TrackingMap({ showHeatmap }: { showHeatmap: boolean }) {
+function TrackingMap({ showHeatmap, members }: { showHeatmap: boolean; members: TravelUser[] }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const markersRef = useRef<Record<string, L.Marker>>({});
   const trailsRef = useRef<Record<string, L.Polyline>>({});
   const positionsRef = useRef<Record<string, [number, number][]>>({});
   const heatLayersRef = useRef<L.Circle[]>([]);
-  const allUsers = [currentUser, ...collaborators.filter(c => c.lastLocation)];
+  const allUsers = members.filter(u => u.lastLocation);
 
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
