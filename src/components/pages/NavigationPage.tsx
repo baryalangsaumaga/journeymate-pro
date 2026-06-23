@@ -426,28 +426,38 @@ export default function NavigationPage() {
           {!isOnline && (
             <Badge className="bg-amber-500 text-white text-[9px] h-5">Offline mode</Badge>
           )}
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 items-end">
             <Button
               variant="default"
               size="icon"
-              className="h-11 w-11 rounded-full shadow-travel glow-primary"
+              className={`h-11 w-11 rounded-full shadow-travel ${followMode ? "glow-primary" : "bg-card text-foreground hover:bg-card/90"}`}
               onClick={handleLocate}
               aria-label="Recenter on my location"
-              title="Recenter on my location"
+              title={followMode ? "Following — tap to recenter" : "Recenter & resume follow"}
             >
-              <Locate className="w-5 h-5" />
+              <Locate className={`w-5 h-5 ${followMode ? "" : "opacity-70"}`} />
             </Button>
             {isNavigating && (
-              <Button
-                variant="outline"
-                size="icon"
-                className={`h-10 w-10 rounded-full backdrop-blur-sm shadow-card-hover border-border/50 ${tiltLocked ? "bg-card/95" : "bg-primary text-primary-foreground"}`}
-                onClick={() => setTiltLocked(v => !v)}
-                aria-label={tiltLocked ? "Unlock 3D tilt" : "Lock view flat"}
-                title={tiltLocked ? "Unlock 3D tilt" : "Lock view flat"}
-              >
-                {tiltLocked ? <Lock className="w-4 h-4" /> : <Box className="w-4 h-4" />}
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className={`h-10 w-10 rounded-full backdrop-blur-sm shadow-card-hover border-border/50 ${tiltLocked ? "bg-card/95" : "bg-primary text-primary-foreground"}`}
+                  onClick={() => setTiltLocked(v => !v)}
+                  aria-label={tiltLocked ? "Unlock 3D tilt" : "Lock view flat"}
+                  title={tiltLocked ? "Unlock 3D tilt" : "Lock view flat"}
+                >
+                  {tiltLocked ? <Lock className="w-4 h-4" /> : <Box className="w-4 h-4" />}
+                </Button>
+                <button
+                  onClick={() => setKeepTiltOnRecenter(v => !v)}
+                  className={`text-[9px] font-semibold px-2 py-1 rounded-lg backdrop-blur-sm border border-border/50 shadow-card-hover ${keepTiltOnRecenter ? "bg-primary/15 text-primary" : "bg-card/95 text-muted-foreground"}`}
+                  title="Keep 3D tilt when pressing recenter"
+                >
+                  Keep tilt: {keepTiltOnRecenter ? "ON" : "OFF"}
+                </button>
+              </>
+            )}
             )}
             <VoiceSettingsPopover value={voicePrefs} onChange={setVoicePrefs} />
           </div>
