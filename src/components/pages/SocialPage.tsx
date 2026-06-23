@@ -14,7 +14,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { mockMessages, collaborators, currentUser, heatmapData } from "@/data/mockData";
+import { mockMessages, collaborators, currentUser, heatmapData, mockTrips } from "@/data/mockData";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { ChatMessage, TravelUser } from "@/types/travel";
 import { VideoCallOverlay, VoiceCallOverlay, AnimatePresence } from "@/components/travel/CallOverlay";
 
 const createUserIcon = (name: string, online: boolean) => L.divIcon({
@@ -24,14 +26,14 @@ const createUserIcon = (name: string, online: boolean) => L.divIcon({
   iconAnchor: [16, 16],
 });
 
-function TrackingMap({ showHeatmap }: { showHeatmap: boolean }) {
+function TrackingMap({ showHeatmap, members }: { showHeatmap: boolean; members: TravelUser[] }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const markersRef = useRef<Record<string, L.Marker>>({});
   const trailsRef = useRef<Record<string, L.Polyline>>({});
   const positionsRef = useRef<Record<string, [number, number][]>>({});
   const heatLayersRef = useRef<L.Circle[]>([]);
-  const allUsers = [currentUser, ...collaborators.filter(c => c.lastLocation)];
+  const allUsers = members.filter(u => u.lastLocation);
 
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
@@ -145,17 +147,37 @@ function TrackingMap({ showHeatmap }: { showHeatmap: boolean }) {
 }
 
 export default function SocialPage() {
+  // Multi-trip group chats: each trip has its own conversation, members, and message history.
+  const [activeTripId, setActiveTripId] = useState<string>(mockTrips[0].id);
+  const activeTrip = mockTrips.find(t => t.id === activeTripId) ?? mockTrips[0];
+  const tripMembers: TravelUser[] = activeTrip.collaborators ?? [currentUser];
+  const conversationId = `trip-${activeTrip.id}`;
+
+  // Seed messages: t1 gets the mock thread, other trips start empty.
+  const [messagesByTrip, setMessagesByTrip] = useState<Record<string, ChatMessage[]>>(() => {
+    const seed: Record<string, ChatMessage[]> = { t1: mockMessages };
+    mockTrips.forEach(t => { if (!seed[t.id]) seed[t.id] = []; });
+    return seed;
+  });
+  const messages = messagesByTrip[activeTrip.id] ?? [];
+  const setMessages = (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+    setMessagesByTrip(prev => ({
+      ...prev,
+      [activeTrip.id]: typeof updater === "function" ? (updater as any)(prev[activeTrip.id] ?? []) : updater,
+    }));
+  };
+
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState(mockMessages);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [shareLocation, setShareLocation] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [activeCall, setActiveCall] = useState<null | "audio" | "video">(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
-  // 1:1 call against the first online collaborator (group calls would fan-out this id).
-  const callPeer = collaborators.find(c => c.isOnline) ?? collaborators[0];
-  const conversationId = "manila-heritage-walk";
+  // 1:1 call against the first online collaborator of the active trip.
+  const callPeer = tripMembers.find(c => c.id !== currentUser.id && c.isOnline)
+    ?? tripMembers.find(c => c.id !== currentUser.id)
+    ?? collaborators[0];
 
 
   useEffect(() => {
@@ -227,12 +249,31 @@ export default function SocialPage() {
   };
 
   const roleIcons: Record<string, typeof Crown> = { owner: Crown, editor: Navigation, viewer: Eye };
-  const allUsers = [currentUser, ...collaborators.filter(c => c.lastLocation)];
+  const allUsers = tripMembers.filter(u => u.lastLocation);
 
   return (
     <div className="flex flex-col h-[calc(100dvh-7rem)]">
+      {/* Trip switcher — keeps each group chat isolated so multiple trips don't collide */}
+      <div className="px-4 pt-4 pb-2">
+        <Select value={activeTripId} onValueChange={setActiveTripId}>
+          <SelectTrigger className="h-10 rounded-xl bg-card border-border/50 text-xs font-semibold">
+            <div className="flex items-center gap-2 min-w-0">
+              <Users className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+              <SelectValue />
+            </div>
+          </SelectTrigger>
+          <SelectContent>
+            {mockTrips.map(t => (
+              <SelectItem key={t.id} value={t.id} className="text-xs">
+                {t.title} · {(t.collaborators?.length ?? 1)} members
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <Tabs defaultValue="chat" className="flex flex-col flex-1 min-h-0">
-        <div className="px-4 pt-4">
+        <div className="px-4 pt-1">
           <TabsList className="w-full h-10 p-1 rounded-xl bg-muted">
             <TabsTrigger value="chat" className="flex-1 text-xs rounded-lg font-semibold data-[state=active]:shadow-sm">Chat</TabsTrigger>
             <TabsTrigger value="members" className="flex-1 text-xs rounded-lg font-semibold data-[state=active]:shadow-sm">Members</TabsTrigger>
@@ -242,15 +283,15 @@ export default function SocialPage() {
 
         <TabsContent value="chat" className="flex-1 hidden data-[state=active]:flex flex-col min-h-0 m-0">
           <div className="px-4 py-2.5 flex items-center justify-between border-b border-border/30">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
               <div className="flex -space-x-1.5">
-                {collaborators.slice(0, 3).map((u, i) => (
+                {tripMembers.filter(u => u.id !== currentUser.id).slice(0, 3).map((u, i) => (
                   <img key={i} src={u.avatar} className="w-7 h-7 rounded-lg border-2 border-card" />
                 ))}
               </div>
-              <div>
-                <p className="text-xs font-semibold">Manila Heritage Walk</p>
-                <p className="text-[10px] text-muted-foreground">{collaborators.filter(c => c.isOnline).length} online</p>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold truncate">{activeTrip.title}</p>
+                <p className="text-[10px] text-muted-foreground">{tripMembers.filter(c => c.isOnline).length} online · {tripMembers.length} members</p>
               </div>
             </div>
             <div className="flex gap-0.5">
@@ -328,13 +369,13 @@ export default function SocialPage() {
 
         <TabsContent value="members" className="flex-1 overflow-y-auto m-0 px-4 py-3">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="section-header">Trip Members</h3>
+            <h3 className="section-header">{activeTrip.title} · Members</h3>
             <Button size="sm" className="h-8 text-xs gap-1.5 rounded-xl font-semibold" onClick={() => setInviteOpen(true)}>
               <UserPlus className="w-3.5 h-3.5" /> Invite
             </Button>
           </div>
           <div className="space-y-2">
-            {[currentUser, ...collaborators].map(user => {
+            {tripMembers.map(user => {
               const RoleIcon = roleIcons[user.role] || Eye;
               return (
                 <Card key={user.id} className="border-0 card-interactive">
@@ -361,7 +402,8 @@ export default function SocialPage() {
         </TabsContent>
 
         <TabsContent value="tracking" className="flex-1 m-0 relative overflow-hidden">
-          <TrackingMap showHeatmap={showHeatmap} />
+          {/* Remount the map per trip so markers/trails reset cleanly */}
+          <TrackingMap key={activeTrip.id} showHeatmap={showHeatmap} members={tripMembers} />
           <div className="absolute top-4 right-4 z-30">
             <button
               onClick={() => setShowHeatmap(v => !v)}
@@ -372,11 +414,20 @@ export default function SocialPage() {
               {showHeatmap ? "Hide" : "Show"} Heatmap
             </button>
           </div>
-          <div className="absolute bottom-4 left-4 right-4 z-30 pointer-events-none">
-            <Card className="border-0 card-elevated pointer-events-auto">
-              <CardContent className="p-3.5">
-                <p className="text-xs font-semibold mb-2.5">Live Tracking · {collaborators.filter(c => c.isOnline).length} sharing</p>
-                <div className="flex gap-2 overflow-x-auto">
+          {/* Bottom card — pulled up so it doesn't collide with the app shell's bottom nav */}
+          <div className="absolute bottom-3 left-3 right-3 z-30 pointer-events-none">
+            <Card className="border-0 card-elevated pointer-events-auto bg-card/95 backdrop-blur-md">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold truncate">Live · {activeTrip.title}</p>
+                  <Badge variant="outline" className="text-[9px] h-5 font-semibold flex-shrink-0">
+                    {tripMembers.filter(c => c.isOnline).length} sharing
+                  </Badge>
+                </div>
+                <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-0.5">
+                  {allUsers.filter(u => u.isOnline).length === 0 && (
+                    <p className="text-[10px] text-muted-foreground py-1">No one is sharing location right now.</p>
+                  )}
                   {allUsers.filter(u => u.isOnline).map(u => (
                     <div key={u.id} className="flex items-center gap-1.5 bg-muted rounded-xl px-2.5 py-1.5 flex-shrink-0">
                       <img src={u.avatar} className="w-5 h-5 rounded-lg" />

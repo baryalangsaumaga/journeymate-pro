@@ -85,6 +85,8 @@ export default function NavigationPage() {
   const [tripMode, setTripMode] = useState(false); // hides search/style/locate when launched from a trip
   const [isOnline, setIsOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
   const [tiltLocked, setTiltLocked] = useState(false); // when true, tilt stays flat during navigation
+  const [followMode, setFollowMode] = useState(true); // auto-recenter on user as they move
+  const [keepTiltOnRecenter, setKeepTiltOnRecenter] = useState(true); // preserve 3D tilt when pressing recenter
 
   // Persist voice prefs
   useEffect(() => { saveVoicePrefs(voicePrefs); }, [voicePrefs]);
@@ -116,6 +118,8 @@ export default function NavigationPage() {
   const destMarkerRef = useRef<L.Marker | null>(null);
   const startMarkerRef = useRef<L.Marker | null>(null);
   const eateryMarkersRef = useRef<L.Marker[]>([]);
+  const accuracyRingRef = useRef<L.Circle | null>(null);
+  const headingConeRef = useRef<L.Polygon | null>(null);
 
   const tileUrls: Record<string, string> = {
     voyager: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
@@ -172,6 +176,8 @@ export default function NavigationPage() {
     });
     tileRef.current = L.tileLayer(tileUrls[mapStyle]).addTo(map);
     mapInstance.current = map;
+    // User-initiated drag disables follow-mode so the map doesn't fight them
+    map.on("dragstart", () => setFollowMode(false));
     setTimeout(() => map.invalidateSize(), 100);
     return () => { map.remove(); mapInstance.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,7 +201,26 @@ export default function NavigationPage() {
     } else {
       startMarkerRef.current.setLatLng(userPos);
     }
-  }, [userPos?.[0], userPos?.[1]]);
+    // GPS accuracy ring — visualizes confidence in the facing direction
+    const acc = Math.min(fix?.accuracy ?? 50, 250);
+    const confident = (fix?.accuracy ?? 9999) < 40;
+    if (!accuracyRingRef.current) {
+      accuracyRingRef.current = L.circle(userPos, {
+        radius: acc,
+        color: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
+        weight: 1,
+        fillColor: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
+        fillOpacity: 0.12,
+      }).addTo(map);
+    } else {
+      accuracyRingRef.current.setLatLng(userPos);
+      accuracyRingRef.current.setRadius(acc);
+      accuracyRingRef.current.setStyle({
+        color: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
+        fillColor: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
+      });
+    }
+  }, [userPos?.[0], userPos?.[1], fix?.accuracy]);
 
   // Update destination marker
   useEffect(() => {
@@ -268,7 +293,7 @@ export default function NavigationPage() {
       carMarkerRef.current.setLatLng(userPos);
       carMarkerRef.current.setIcon(carIcon(fix?.heading ?? null));
     }
-    map.setView(userPos, 16, { animate: true });
+    if (followMode) map.setView(userPos, 16, { animate: true });
 
     // Find nearest coordinate on route -> draw traveled polyline up to that index
     let minIdx = 0, minD = Infinity;
@@ -340,7 +365,13 @@ export default function NavigationPage() {
   const handleLocate = () => {
     if (!mapInstance.current || !userPos) return;
     mapInstance.current.setView(userPos, 16, { animate: true });
-    toast({ title: "📍 Centered on Your Location" });
+    setFollowMode(true); // re-engage follow on recenter
+    // Tilt is preserved unless the user explicitly disabled keepTiltOnRecenter
+    if (!keepTiltOnRecenter && isNavigating) setTiltLocked(true);
+    toast({
+      title: "📍 Centered on Your Location",
+      description: keepTiltOnRecenter ? "Follow-mode on · 3D tilt preserved" : "Follow-mode on",
+    });
   };
 
   const handleStartNav = () => {
@@ -351,6 +382,7 @@ export default function NavigationPage() {
       toast({ title: "🧭 Navigation Started", description: first });
       speak(first);
       setSheetExpanded(false);
+      setFollowMode(true); // always follow when starting
     } else {
       toast({ title: "⏹️ Navigation Stopped" });
       setSheetExpanded(true);
@@ -394,28 +426,37 @@ export default function NavigationPage() {
           {!isOnline && (
             <Badge className="bg-amber-500 text-white text-[9px] h-5">Offline mode</Badge>
           )}
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 items-end">
             <Button
               variant="default"
               size="icon"
-              className="h-11 w-11 rounded-full shadow-travel glow-primary"
+              className={`h-11 w-11 rounded-full shadow-travel ${followMode ? "glow-primary" : "bg-card text-foreground hover:bg-card/90"}`}
               onClick={handleLocate}
               aria-label="Recenter on my location"
-              title="Recenter on my location"
+              title={followMode ? "Following — tap to recenter" : "Recenter & resume follow"}
             >
-              <Locate className="w-5 h-5" />
+              <Locate className={`w-5 h-5 ${followMode ? "" : "opacity-70"}`} />
             </Button>
             {isNavigating && (
-              <Button
-                variant="outline"
-                size="icon"
-                className={`h-10 w-10 rounded-full backdrop-blur-sm shadow-card-hover border-border/50 ${tiltLocked ? "bg-card/95" : "bg-primary text-primary-foreground"}`}
-                onClick={() => setTiltLocked(v => !v)}
-                aria-label={tiltLocked ? "Unlock 3D tilt" : "Lock view flat"}
-                title={tiltLocked ? "Unlock 3D tilt" : "Lock view flat"}
-              >
-                {tiltLocked ? <Lock className="w-4 h-4" /> : <Box className="w-4 h-4" />}
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className={`h-10 w-10 rounded-full backdrop-blur-sm shadow-card-hover border-border/50 ${tiltLocked ? "bg-card/95" : "bg-primary text-primary-foreground"}`}
+                  onClick={() => setTiltLocked(v => !v)}
+                  aria-label={tiltLocked ? "Unlock 3D tilt" : "Lock view flat"}
+                  title={tiltLocked ? "Unlock 3D tilt" : "Lock view flat"}
+                >
+                  {tiltLocked ? <Lock className="w-4 h-4" /> : <Box className="w-4 h-4" />}
+                </Button>
+                <button
+                  onClick={() => setKeepTiltOnRecenter(v => !v)}
+                  className={`text-[9px] font-semibold px-2 py-1 rounded-lg backdrop-blur-sm border border-border/50 shadow-card-hover ${keepTiltOnRecenter ? "bg-primary/15 text-primary" : "bg-card/95 text-muted-foreground"}`}
+                  title="Keep 3D tilt when pressing recenter"
+                >
+                  Keep tilt: {keepTiltOnRecenter ? "ON" : "OFF"}
+                </button>
+              </>
             )}
             <VoiceSettingsPopover value={voicePrefs} onChange={setVoicePrefs} />
           </div>
