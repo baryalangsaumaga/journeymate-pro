@@ -176,6 +176,8 @@ export default function NavigationPage() {
     });
     tileRef.current = L.tileLayer(tileUrls[mapStyle]).addTo(map);
     mapInstance.current = map;
+    // User-initiated drag disables follow-mode so the map doesn't fight them
+    map.on("dragstart", () => setFollowMode(false));
     setTimeout(() => map.invalidateSize(), 100);
     return () => { map.remove(); mapInstance.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
