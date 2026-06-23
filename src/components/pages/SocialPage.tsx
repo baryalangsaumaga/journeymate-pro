@@ -369,13 +369,13 @@ export default function SocialPage() {
 
         <TabsContent value="members" className="flex-1 overflow-y-auto m-0 px-4 py-3">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="section-header">Trip Members</h3>
+            <h3 className="section-header">{activeTrip.title} · Members</h3>
             <Button size="sm" className="h-8 text-xs gap-1.5 rounded-xl font-semibold" onClick={() => setInviteOpen(true)}>
               <UserPlus className="w-3.5 h-3.5" /> Invite
             </Button>
           </div>
           <div className="space-y-2">
-            {[currentUser, ...collaborators].map(user => {
+            {tripMembers.map(user => {
               const RoleIcon = roleIcons[user.role] || Eye;
               return (
                 <Card key={user.id} className="border-0 card-interactive">
@@ -402,7 +402,8 @@ export default function SocialPage() {
         </TabsContent>
 
         <TabsContent value="tracking" className="flex-1 m-0 relative overflow-hidden">
-          <TrackingMap showHeatmap={showHeatmap} />
+          {/* Remount the map per trip so markers/trails reset cleanly */}
+          <TrackingMap key={activeTrip.id} showHeatmap={showHeatmap} members={tripMembers} />
           <div className="absolute top-4 right-4 z-30">
             <button
               onClick={() => setShowHeatmap(v => !v)}
@@ -413,11 +414,20 @@ export default function SocialPage() {
               {showHeatmap ? "Hide" : "Show"} Heatmap
             </button>
           </div>
-          <div className="absolute bottom-4 left-4 right-4 z-30 pointer-events-none">
-            <Card className="border-0 card-elevated pointer-events-auto">
-              <CardContent className="p-3.5">
-                <p className="text-xs font-semibold mb-2.5">Live Tracking · {collaborators.filter(c => c.isOnline).length} sharing</p>
-                <div className="flex gap-2 overflow-x-auto">
+          {/* Bottom card — pulled up so it doesn't collide with the app shell's bottom nav */}
+          <div className="absolute bottom-3 left-3 right-3 z-30 pointer-events-none">
+            <Card className="border-0 card-elevated pointer-events-auto bg-card/95 backdrop-blur-md">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold truncate">Live · {activeTrip.title}</p>
+                  <Badge variant="outline" className="text-[9px] h-5 font-semibold flex-shrink-0">
+                    {tripMembers.filter(c => c.isOnline).length} sharing
+                  </Badge>
+                </div>
+                <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-0.5">
+                  {allUsers.filter(u => u.isOnline).length === 0 && (
+                    <p className="text-[10px] text-muted-foreground py-1">No one is sharing location right now.</p>
+                  )}
                   {allUsers.filter(u => u.isOnline).map(u => (
                     <div key={u.id} className="flex items-center gap-1.5 bg-muted rounded-xl px-2.5 py-1.5 flex-shrink-0">
                       <img src={u.avatar} className="w-5 h-5 rounded-lg" />
