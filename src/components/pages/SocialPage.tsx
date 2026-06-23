@@ -147,17 +147,37 @@ function TrackingMap({ showHeatmap, members }: { showHeatmap: boolean; members: 
 }
 
 export default function SocialPage() {
+  // Multi-trip group chats: each trip has its own conversation, members, and message history.
+  const [activeTripId, setActiveTripId] = useState<string>(mockTrips[0].id);
+  const activeTrip = mockTrips.find(t => t.id === activeTripId) ?? mockTrips[0];
+  const tripMembers: TravelUser[] = activeTrip.collaborators ?? [currentUser];
+  const conversationId = `trip-${activeTrip.id}`;
+
+  // Seed messages: t1 gets the mock thread, other trips start empty.
+  const [messagesByTrip, setMessagesByTrip] = useState<Record<string, ChatMessage[]>>(() => {
+    const seed: Record<string, ChatMessage[]> = { t1: mockMessages };
+    mockTrips.forEach(t => { if (!seed[t.id]) seed[t.id] = []; });
+    return seed;
+  });
+  const messages = messagesByTrip[activeTrip.id] ?? [];
+  const setMessages = (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+    setMessagesByTrip(prev => ({
+      ...prev,
+      [activeTrip.id]: typeof updater === "function" ? (updater as any)(prev[activeTrip.id] ?? []) : updater,
+    }));
+  };
+
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState(mockMessages);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [shareLocation, setShareLocation] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [activeCall, setActiveCall] = useState<null | "audio" | "video">(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
-  // 1:1 call against the first online collaborator (group calls would fan-out this id).
-  const callPeer = collaborators.find(c => c.isOnline) ?? collaborators[0];
-  const conversationId = "manila-heritage-walk";
+  // 1:1 call against the first online collaborator of the active trip.
+  const callPeer = tripMembers.find(c => c.id !== currentUser.id && c.isOnline)
+    ?? tripMembers.find(c => c.id !== currentUser.id)
+    ?? collaborators[0];
 
 
   useEffect(() => {
