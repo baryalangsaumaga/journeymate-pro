@@ -14,7 +14,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { mockMessages, collaborators, currentUser, heatmapData } from "@/data/mockData";
+import { mockMessages, collaborators, currentUser, heatmapData, mockTrips } from "@/data/mockData";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { ChatMessage, TravelUser } from "@/types/travel";
 import { VideoCallOverlay, VoiceCallOverlay, AnimatePresence } from "@/components/travel/CallOverlay";
 
 const createUserIcon = (name: string, online: boolean) => L.divIcon({
