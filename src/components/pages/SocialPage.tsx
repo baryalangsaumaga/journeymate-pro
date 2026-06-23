@@ -283,15 +283,15 @@ export default function SocialPage() {
 
         <TabsContent value="chat" className="flex-1 hidden data-[state=active]:flex flex-col min-h-0 m-0">
           <div className="px-4 py-2.5 flex items-center justify-between border-b border-border/30">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
               <div className="flex -space-x-1.5">
-                {collaborators.slice(0, 3).map((u, i) => (
+                {tripMembers.filter(u => u.id !== currentUser.id).slice(0, 3).map((u, i) => (
                   <img key={i} src={u.avatar} className="w-7 h-7 rounded-lg border-2 border-card" />
                 ))}
               </div>
-              <div>
-                <p className="text-xs font-semibold">Manila Heritage Walk</p>
-                <p className="text-[10px] text-muted-foreground">{collaborators.filter(c => c.isOnline).length} online</p>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold truncate">{activeTrip.title}</p>
+                <p className="text-[10px] text-muted-foreground">{tripMembers.filter(c => c.isOnline).length} online · {tripMembers.length} members</p>
               </div>
             </div>
             <div className="flex gap-0.5">
