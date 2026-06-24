@@ -480,15 +480,65 @@ export default function NavigationPage() {
                 >
                   {tiltLocked ? <Lock className="w-4 h-4" /> : <Box className="w-4 h-4" />}
                 </Button>
-                <button
-                  onClick={() => setKeepTiltOnRecenter(v => !v)}
-                  className={`text-[9px] font-semibold px-2 py-1 rounded-lg backdrop-blur-sm border border-border/50 shadow-card-hover ${keepTiltOnRecenter ? "bg-primary/15 text-primary" : "bg-card/95 text-muted-foreground"}`}
-                  title="Keep 3D tilt when pressing recenter"
-                >
-                  Keep tilt: {keepTiltOnRecenter ? "ON" : "OFF"}
-                </button>
               </>
             )}
+            {/* Reset 3D — visible whenever tilt is currently applied */}
+            {tilt3D && !isNavigating && (
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-full bg-card/95 backdrop-blur-sm shadow-card-hover border-border/50"
+                onClick={handleResetTilt}
+                aria-label="Reset 3D tilt"
+                title="Reset to top-down"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </Button>
+            )}
+            {/* GPS reliability + threshold setting */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card/95 backdrop-blur-sm shadow-card-hover border border-border/50 text-[10px] font-semibold"
+                  title="GPS reliability & threshold"
+                  style={{ color: reliability.color }}
+                >
+                  <Signal className="w-3.5 h-3.5" />
+                  <span>{reliability.label}</span>
+                  <span className="text-muted-foreground font-normal">· ≤{accuracyThreshold}m</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-64 p-3 space-y-3">
+                <div>
+                  <p className="text-[11px] font-semibold mb-1">GPS Accuracy Threshold</p>
+                  <p className="text-[10px] text-muted-foreground mb-2">
+                    Fix within <span className="font-semibold">{accuracyThreshold}m</span> is considered reliable. Half of that is "Good".
+                  </p>
+                  <Slider value={[accuracyThreshold]} min={10} max={120} step={5} onValueChange={([v]) => setAccuracyThreshold(v)} />
+                  <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+                    <span>Strict 10m</span><span>Loose 120m</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-border/40">
+                  <div>
+                    <p className="text-[11px] font-semibold">Keep tilt after stop</p>
+                    <p className="text-[9px] text-muted-foreground">Stay in 3D when navigation ends</p>
+                  </div>
+                  <Switch checked={keepTiltAfterStop} onCheckedChange={setKeepTiltAfterStop} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold">Keep tilt on recenter</p>
+                    <p className="text-[9px] text-muted-foreground">Preserve 3D when pressing GPS</p>
+                  </div>
+                  <Switch checked={keepTiltOnRecenter} onCheckedChange={setKeepTiltOnRecenter} />
+                </div>
+                <div className="text-[10px] text-muted-foreground pt-1 border-t border-border/40">
+                  Current: <span className="font-semibold" style={{ color: reliability.color }}>{reliability.label}</span>
+                  {" · "}{Math.round(fix?.accuracy ?? 0)}m fix
+                </div>
+              </PopoverContent>
+            </Popover>
             <VoiceSettingsPopover value={voicePrefs} onChange={setVoicePrefs} />
           </div>
         </div>
