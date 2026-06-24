@@ -90,6 +90,14 @@ export default function NavigationPage() {
   const [tiltLocked, setTiltLocked] = useState(false); // when true, tilt stays flat during navigation
   const [followMode, setFollowMode] = useState(true); // auto-recenter on user as they move
   const [keepTiltOnRecenter, setKeepTiltOnRecenter] = useState(true); // preserve 3D tilt when pressing recenter
+  const [keepTiltAfterStop, setKeepTiltAfterStop] = useState(false); // preserve tilt even after navigation stops
+  const [manualTilt, setManualTilt] = useState(false); // user-forced tilt when not navigating
+  const [accuracyThreshold, setAccuracyThreshold] = useState<number>(() => {
+    if (typeof window === "undefined") return 40;
+    const raw = window.localStorage.getItem("nav.accuracyThreshold");
+    return raw ? Number(raw) : 40;
+  });
+  useEffect(() => { try { window.localStorage.setItem("nav.accuracyThreshold", String(accuracyThreshold)); } catch {} }, [accuracyThreshold]);
 
   // Persist voice prefs
   useEffect(() => { saveVoicePrefs(voicePrefs); }, [voicePrefs]);
