@@ -174,6 +174,31 @@ export default function SocialPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [activeCall, setActiveCall] = useState<null | "audio" | "video">(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [trackOverlayOpen, setTrackOverlayOpen] = useState(true);
+
+  // Per-trip presence: which user IDs are actively sharing live location in each trip.
+  // Seeded from each trip's online collaborators so trips don't share/mix presence.
+  const [trackingByTrip, setTrackingByTrip] = useState<Record<string, string[]>>(() => {
+    const seed: Record<string, string[]> = {};
+    mockTrips.forEach(t => {
+      seed[t.id] = (t.collaborators ?? [])
+        .filter(c => c.isOnline && c.lastLocation)
+        .map(c => c.id);
+    });
+    return seed;
+  });
+  const trackingIds = trackingByTrip[activeTrip.id] ?? [];
+  // Reflect the local user's own toggle in the active trip's tracking set
+  useEffect(() => {
+    setTrackingByTrip(prev => {
+      const set = new Set(prev[activeTrip.id] ?? []);
+      if (shareLocation) set.add(currentUser.id); else set.delete(currentUser.id);
+      return { ...prev, [activeTrip.id]: Array.from(set) };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareLocation, activeTrip.id]);
+  const isTracking = (id: string) => trackingIds.includes(id);
+
   // 1:1 call against the first online collaborator of the active trip.
   const callPeer = tripMembers.find(c => c.id !== currentUser.id && c.isOnline)
     ?? tripMembers.find(c => c.id !== currentUser.id)
