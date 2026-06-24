@@ -3,11 +3,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Car, Bus, Footprints, Bike, ArrowRight, ArrowLeft, ArrowUp,
   CornerUpRight, CornerUpLeft, Flag, Gauge, Route, Locate,
-  UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2, Lock, Unlock, Box,
+  UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2, Lock, Unlock, Box, Signal, RotateCcw,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -87,6 +90,14 @@ export default function NavigationPage() {
   const [tiltLocked, setTiltLocked] = useState(false); // when true, tilt stays flat during navigation
   const [followMode, setFollowMode] = useState(true); // auto-recenter on user as they move
   const [keepTiltOnRecenter, setKeepTiltOnRecenter] = useState(true); // preserve 3D tilt when pressing recenter
+  const [keepTiltAfterStop, setKeepTiltAfterStop] = useState(false); // preserve tilt even after navigation stops
+  const [manualTilt, setManualTilt] = useState(false); // user-forced tilt when not navigating
+  const [accuracyThreshold, setAccuracyThreshold] = useState<number>(() => {
+    if (typeof window === "undefined") return 40;
+    const raw = window.localStorage.getItem("nav.accuracyThreshold");
+    return raw ? Number(raw) : 40;
+  });
+  useEffect(() => { try { window.localStorage.setItem("nav.accuracyThreshold", String(accuracyThreshold)); } catch {} }, [accuracyThreshold]);
 
   // Persist voice prefs
   useEffect(() => { saveVoicePrefs(voicePrefs); }, [voicePrefs]);
@@ -192,35 +203,43 @@ export default function NavigationPage() {
     return () => clearTimeout(t);
   }, [isNavigating]);
 
+  // Reliability tier from current GPS accuracy vs user-set threshold
+  const reliability = useMemo(() => {
+    const a = fix?.accuracy ?? 9999;
+    if (a <= accuracyThreshold * 0.5) return { label: "Good", color: "hsl(162,72%,40%)", text: "white" };
+    if (a <= accuracyThreshold) return { label: "Fair", color: "hsl(38,92%,50%)", text: "white" };
+    return { label: "Poor", color: "hsl(0,75%,55%)", text: "white" };
+  }, [fix?.accuracy, accuracyThreshold]);
+
   // Update start marker as GPS arrives
   useEffect(() => {
     const map = mapInstance.current;
     if (!map || !userPos) return;
+    const labelHtml = `
+      <div style="position:relative;width:18px;height:18px;">
+        <div style="position:absolute;inset:0;border-radius:50%;background:${reliability.color};border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.35)"></div>
+        <div style="position:absolute;top:20px;left:50%;transform:translateX(-50%);background:${reliability.color};color:${reliability.text};font:600 9px Inter,sans-serif;padding:1px 6px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);letter-spacing:.02em;">GPS · ${reliability.label}</div>
+      </div>`;
+    const icon = L.divIcon({ className: "", html: labelHtml, iconSize: [18, 18], iconAnchor: [9, 9] });
     if (!startMarkerRef.current) {
-      startMarkerRef.current = L.marker(userPos, { icon: dot("#22c55e", 16) }).bindPopup("📍 You are here").addTo(map);
+      startMarkerRef.current = L.marker(userPos, { icon }).bindPopup(`📍 You are here · ${reliability.label} GPS`).addTo(map);
     } else {
       startMarkerRef.current.setLatLng(userPos);
+      startMarkerRef.current.setIcon(icon);
     }
-    // GPS accuracy ring — visualizes confidence in the facing direction
+    // GPS accuracy ring — radius from real accuracy, color from reliability tier
     const acc = Math.min(fix?.accuracy ?? 50, 250);
-    const confident = (fix?.accuracy ?? 9999) < 40;
     if (!accuracyRingRef.current) {
       accuracyRingRef.current = L.circle(userPos, {
-        radius: acc,
-        color: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
-        weight: 1,
-        fillColor: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
-        fillOpacity: 0.12,
+        radius: acc, color: reliability.color, weight: 1,
+        fillColor: reliability.color, fillOpacity: 0.12,
       }).addTo(map);
     } else {
       accuracyRingRef.current.setLatLng(userPos);
       accuracyRingRef.current.setRadius(acc);
-      accuracyRingRef.current.setStyle({
-        color: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
-        fillColor: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
-      });
+      accuracyRingRef.current.setStyle({ color: reliability.color, fillColor: reliability.color });
     }
-  }, [userPos?.[0], userPos?.[1], fix?.accuracy]);
+  }, [userPos?.[0], userPos?.[1], fix?.accuracy, reliability.label]);
 
   // Update destination marker
   useEffect(() => {
@@ -384,9 +403,21 @@ export default function NavigationPage() {
       setSheetExpanded(false);
       setFollowMode(true); // always follow when starting
     } else {
-      toast({ title: "⏹️ Navigation Stopped" });
+      toast({ title: "⏹️ Navigation Stopped", description: keepTiltAfterStop ? "3D tilt kept (Keep tilt ON)" : "View reset to top-down" });
       setSheetExpanded(true);
+      // Auto-reset 3D unless the user has Keep tilt enabled
+      if (!keepTiltAfterStop) {
+        setManualTilt(false);
+        setTiltLocked(false);
+      }
     }
+  };
+
+  const handleResetTilt = () => {
+    setManualTilt(false);
+    setTiltLocked(false);
+    setIsNavigating(false);
+    toast({ title: "🗺️ View Reset", description: "Back to top-down" });
   };
 
   const handlePickDestination = (place: Location) => {
@@ -400,8 +431,8 @@ export default function NavigationPage() {
   const ManeuverIcon = maneuverIcon(nextStep?.maneuver ?? currentStep?.maneuver, nextStep?.modifier ?? currentStep?.modifier);
   const showToll = routeHasToll(route?.coordinates, selectedMode);
 
-  // Always show controls — users need GPS recenter and style switching at all times.
-  const tilt3D = isNavigating && !tiltLocked;
+  // Tilt is on during navigation (unless locked flat) OR when user kept tilt after stop
+  const tilt3D = ((isNavigating || (manualTilt && keepTiltAfterStop)) && !tiltLocked);
 
   return (
     <div className="relative h-[calc(100dvh-7rem)] overflow-hidden">
@@ -449,15 +480,65 @@ export default function NavigationPage() {
                 >
                   {tiltLocked ? <Lock className="w-4 h-4" /> : <Box className="w-4 h-4" />}
                 </Button>
-                <button
-                  onClick={() => setKeepTiltOnRecenter(v => !v)}
-                  className={`text-[9px] font-semibold px-2 py-1 rounded-lg backdrop-blur-sm border border-border/50 shadow-card-hover ${keepTiltOnRecenter ? "bg-primary/15 text-primary" : "bg-card/95 text-muted-foreground"}`}
-                  title="Keep 3D tilt when pressing recenter"
-                >
-                  Keep tilt: {keepTiltOnRecenter ? "ON" : "OFF"}
-                </button>
               </>
             )}
+            {/* Reset 3D — visible whenever tilt is currently applied */}
+            {tilt3D && !isNavigating && (
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-full bg-card/95 backdrop-blur-sm shadow-card-hover border-border/50"
+                onClick={handleResetTilt}
+                aria-label="Reset 3D tilt"
+                title="Reset to top-down"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </Button>
+            )}
+            {/* GPS reliability + threshold setting */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card/95 backdrop-blur-sm shadow-card-hover border border-border/50 text-[10px] font-semibold"
+                  title="GPS reliability & threshold"
+                  style={{ color: reliability.color }}
+                >
+                  <Signal className="w-3.5 h-3.5" />
+                  <span>{reliability.label}</span>
+                  <span className="text-muted-foreground font-normal">· ≤{accuracyThreshold}m</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-64 p-3 space-y-3">
+                <div>
+                  <p className="text-[11px] font-semibold mb-1">GPS Accuracy Threshold</p>
+                  <p className="text-[10px] text-muted-foreground mb-2">
+                    Fix within <span className="font-semibold">{accuracyThreshold}m</span> is considered reliable. Half of that is "Good".
+                  </p>
+                  <Slider value={[accuracyThreshold]} min={10} max={120} step={5} onValueChange={([v]) => setAccuracyThreshold(v)} />
+                  <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+                    <span>Strict 10m</span><span>Loose 120m</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-border/40">
+                  <div>
+                    <p className="text-[11px] font-semibold">Keep tilt after stop</p>
+                    <p className="text-[9px] text-muted-foreground">Stay in 3D when navigation ends</p>
+                  </div>
+                  <Switch checked={keepTiltAfterStop} onCheckedChange={setKeepTiltAfterStop} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold">Keep tilt on recenter</p>
+                    <p className="text-[9px] text-muted-foreground">Preserve 3D when pressing GPS</p>
+                  </div>
+                  <Switch checked={keepTiltOnRecenter} onCheckedChange={setKeepTiltOnRecenter} />
+                </div>
+                <div className="text-[10px] text-muted-foreground pt-1 border-t border-border/40">
+                  Current: <span className="font-semibold" style={{ color: reliability.color }}>{reliability.label}</span>
+                  {" · "}{Math.round(fix?.accuracy ?? 0)}m fix
+                </div>
+              </PopoverContent>
+            </Popover>
             <VoiceSettingsPopover value={voicePrefs} onChange={setVoicePrefs} />
           </div>
         </div>
