@@ -403,9 +403,21 @@ export default function NavigationPage() {
       setSheetExpanded(false);
       setFollowMode(true); // always follow when starting
     } else {
-      toast({ title: "⏹️ Navigation Stopped" });
+      toast({ title: "⏹️ Navigation Stopped", description: keepTiltAfterStop ? "3D tilt kept (Keep tilt ON)" : "View reset to top-down" });
       setSheetExpanded(true);
+      // Auto-reset 3D unless the user has Keep tilt enabled
+      if (!keepTiltAfterStop) {
+        setManualTilt(false);
+        setTiltLocked(false);
+      }
     }
+  };
+
+  const handleResetTilt = () => {
+    setManualTilt(false);
+    setTiltLocked(false);
+    setIsNavigating(false);
+    toast({ title: "🗺️ View Reset", description: "Back to top-down" });
   };
 
   const handlePickDestination = (place: Location) => {
@@ -419,8 +431,8 @@ export default function NavigationPage() {
   const ManeuverIcon = maneuverIcon(nextStep?.maneuver ?? currentStep?.maneuver, nextStep?.modifier ?? currentStep?.modifier);
   const showToll = routeHasToll(route?.coordinates, selectedMode);
 
-  // Always show controls — users need GPS recenter and style switching at all times.
-  const tilt3D = isNavigating && !tiltLocked;
+  // Tilt is on during navigation (unless locked flat) OR when user kept tilt after stop
+  const tilt3D = ((isNavigating || (manualTilt && keepTiltAfterStop)) && !tiltLocked);
 
   return (
     <div className="relative h-[calc(100dvh-7rem)] overflow-hidden">
