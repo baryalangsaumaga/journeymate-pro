@@ -203,35 +203,43 @@ export default function NavigationPage() {
     return () => clearTimeout(t);
   }, [isNavigating]);
 
+  // Reliability tier from current GPS accuracy vs user-set threshold
+  const reliability = useMemo(() => {
+    const a = fix?.accuracy ?? 9999;
+    if (a <= accuracyThreshold * 0.5) return { label: "Good", color: "hsl(162,72%,40%)", text: "white" };
+    if (a <= accuracyThreshold) return { label: "Fair", color: "hsl(38,92%,50%)", text: "white" };
+    return { label: "Poor", color: "hsl(0,75%,55%)", text: "white" };
+  }, [fix?.accuracy, accuracyThreshold]);
+
   // Update start marker as GPS arrives
   useEffect(() => {
     const map = mapInstance.current;
     if (!map || !userPos) return;
+    const labelHtml = `
+      <div style="position:relative;width:18px;height:18px;">
+        <div style="position:absolute;inset:0;border-radius:50%;background:${reliability.color};border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.35)"></div>
+        <div style="position:absolute;top:20px;left:50%;transform:translateX(-50%);background:${reliability.color};color:${reliability.text};font:600 9px Inter,sans-serif;padding:1px 6px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);letter-spacing:.02em;">GPS · ${reliability.label}</div>
+      </div>`;
+    const icon = L.divIcon({ className: "", html: labelHtml, iconSize: [18, 18], iconAnchor: [9, 9] });
     if (!startMarkerRef.current) {
-      startMarkerRef.current = L.marker(userPos, { icon: dot("#22c55e", 16) }).bindPopup("📍 You are here").addTo(map);
+      startMarkerRef.current = L.marker(userPos, { icon }).bindPopup(`📍 You are here · ${reliability.label} GPS`).addTo(map);
     } else {
       startMarkerRef.current.setLatLng(userPos);
+      startMarkerRef.current.setIcon(icon);
     }
-    // GPS accuracy ring — visualizes confidence in the facing direction
+    // GPS accuracy ring — radius from real accuracy, color from reliability tier
     const acc = Math.min(fix?.accuracy ?? 50, 250);
-    const confident = (fix?.accuracy ?? 9999) < 40;
     if (!accuracyRingRef.current) {
       accuracyRingRef.current = L.circle(userPos, {
-        radius: acc,
-        color: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
-        weight: 1,
-        fillColor: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
-        fillOpacity: 0.12,
+        radius: acc, color: reliability.color, weight: 1,
+        fillColor: reliability.color, fillOpacity: 0.12,
       }).addTo(map);
     } else {
       accuracyRingRef.current.setLatLng(userPos);
       accuracyRingRef.current.setRadius(acc);
-      accuracyRingRef.current.setStyle({
-        color: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
-        fillColor: confident ? "hsl(162,72%,40%)" : "hsl(38,92%,50%)",
-      });
+      accuracyRingRef.current.setStyle({ color: reliability.color, fillColor: reliability.color });
     }
-  }, [userPos?.[0], userPos?.[1], fix?.accuracy]);
+  }, [userPos?.[0], userPos?.[1], fix?.accuracy, reliability.label]);
 
   // Update destination marker
   useEffect(() => {
