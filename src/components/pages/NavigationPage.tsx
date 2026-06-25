@@ -215,8 +215,9 @@ export default function NavigationPage() {
   useEffect(() => {
     const map = mapInstance.current;
     if (!map || !userPos) return;
+    const accText = Math.round(fix?.accuracy ?? 0);
     const labelHtml = `
-      <div style="position:relative;width:18px;height:18px;">
+      <div role="img" aria-label="Your location, GPS signal ${reliability.label}${accText ? `, accurate within ${accText} meters` : ""}" style="position:relative;width:18px;height:18px;">
         <div style="position:absolute;inset:0;border-radius:50%;background:${reliability.color};border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.35)"></div>
         <div style="position:absolute;top:20px;left:50%;transform:translateX(-50%);background:${reliability.color};color:${reliability.text};font:600 9px Inter,sans-serif;padding:1px 6px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);letter-spacing:.02em;">GPS · ${reliability.label}</div>
       </div>`;
