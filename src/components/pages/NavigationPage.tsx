@@ -437,6 +437,10 @@ export default function NavigationPage() {
 
   return (
     <div className="relative h-[calc(100dvh-7rem)] overflow-hidden">
+      {/* Screen-reader live region announcing GPS reliability changes */}
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        GPS signal {reliability.label}{fix?.accuracy ? `, accurate within ${Math.round(fix.accuracy)} meters` : ""}
+      </div>
       {/* Map layer — isolated 3D context so siblings aren't pushed behind in stacking */}
       <div className="absolute inset-0 z-0 overflow-hidden" style={{ perspective: "1400px", perspectiveOrigin: "50% 85%" }}>
         <div
