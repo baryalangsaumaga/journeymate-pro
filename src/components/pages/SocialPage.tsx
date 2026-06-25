@@ -436,63 +436,86 @@ export default function SocialPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="tracking" className="flex-1 m-0 relative overflow-hidden">
-          {/* Remount the map per trip so markers/trails reset cleanly */}
-          <TrackingMap key={activeTrip.id} showHeatmap={showHeatmap} members={tripMembers} />
-          <div className="absolute top-3 right-3 z-30 flex flex-col gap-2 items-end max-w-[calc(100%-1.5rem)]">
-            <button
-              onClick={() => setShowHeatmap(v => !v)}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold shadow-card-hover backdrop-blur-sm border border-border/50 ${
-                showHeatmap ? "bg-primary text-primary-foreground" : "bg-card/95"
-              }`}
-            >
-              {showHeatmap ? "Hide" : "Show"} Heatmap
-            </button>
-            <Badge className="bg-card/95 text-foreground border border-border/50 text-[9px] h-5 font-semibold gap-1 shadow-card-hover">
-              <Radio className="w-2.5 h-2.5 text-primary" /> {trackingIds.length} tracking
-            </Badge>
-          </div>
-          {/* Bottom card — collapsible so it never collides with map controls or the bottom nav.
-              Uses safe-area inset & per-trip tracking presence (not just online). */}
-          <div
-            className="absolute left-3 right-3 z-30 pointer-events-none transition-[bottom] duration-300 ease-out"
-            style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + 12px)` }}
+        <TabsContent value="tracking" className="flex-1 m-0 flex flex-col min-h-0 overflow-hidden">
+          {/* Split layout: map occupies the upper portion, details panel sits below it
+              so they never overlap (fixes the map covering the tracker details). */}
+          <section
+            className={`relative ${trackOverlayOpen ? "flex-1" : "flex-1"} min-h-0 overflow-hidden`}
+            role="region"
+            aria-label={`Live tracking map for ${activeTrip.title}`}
           >
-            <Card className="border-0 card-elevated pointer-events-auto bg-card/95 backdrop-blur-md overflow-hidden">
-              <button
-                onClick={() => setTrackOverlayOpen(v => !v)}
-                className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/40 transition-colors"
-                aria-label={trackOverlayOpen ? "Collapse live tracking panel" : "Expand live tracking panel"}
+            {/* Remount the map per trip so markers/trails reset cleanly */}
+            <TrackingMap key={activeTrip.id} showHeatmap={showHeatmap} members={tripMembers} />
+            <div className="absolute top-3 right-3 z-30 flex flex-col gap-2 items-end max-w-[calc(100%-1.5rem)]">
+              <Button
+                type="button"
+                size="sm"
+                variant={showHeatmap ? "default" : "secondary"}
+                onClick={() => setShowHeatmap(v => !v)}
+                aria-pressed={showHeatmap}
+                aria-label={showHeatmap ? "Hide activity heatmap" : "Show activity heatmap"}
+                className="min-h-11 px-3 rounded-xl text-[11px] font-semibold shadow-card-hover backdrop-blur-sm border border-border/50 bg-card/95"
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Radio className="w-3.5 h-3.5 text-primary flex-shrink-0" />
-                  <p className="text-xs font-semibold truncate">Live · {activeTrip.title}</p>
-                  <Badge variant="outline" className="text-[9px] h-5 font-semibold flex-shrink-0">
-                    {trackingIds.length} tracking
-                  </Badge>
-                </div>
-                {trackOverlayOpen
-                  ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                  : <ChevronUp className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
-              </button>
-              {trackOverlayOpen && (
-                <CardContent className="px-3 pb-3 pt-0">
-                  <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-0.5">
-                    {trackingIds.length === 0 && (
-                      <p className="text-[10px] text-muted-foreground py-1">No one is tracking in this trip right now.</p>
-                    )}
-                    {tripMembers.filter(u => isTracking(u.id)).map(u => (
-                      <div key={u.id} className="flex items-center gap-1.5 bg-muted rounded-xl px-2.5 py-1.5 flex-shrink-0">
-                        <img src={u.avatar} className="w-5 h-5 rounded-lg" />
-                        <span className="text-[10px] font-semibold">{u.name.split(" ")[0]}{u.id === currentUser.id ? " (You)" : ""}</span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          </div>
+                {showHeatmap ? "Hide" : "Show"} Heatmap
+              </Button>
+              <Badge
+                className="bg-card/95 text-foreground border border-border/50 text-[10px] h-6 font-semibold gap-1 shadow-card-hover"
+                aria-live="polite"
+                aria-label={`${trackingIds.length} members currently tracking in this trip`}
+              >
+                <Radio className="w-2.5 h-2.5 text-primary" aria-hidden="true" /> {trackingIds.length} tracking
+              </Badge>
+            </div>
+          </section>
+
+          {/* Details panel — sibling, not overlay, so the map can never cover it.
+              Stays above the global bottom nav via safe-area padding. */}
+          <Card
+            className="border-0 border-t border-border/40 rounded-none bg-card/98 backdrop-blur-md overflow-hidden flex-shrink-0"
+            style={{ paddingBottom: `env(safe-area-inset-bottom, 0px)` }}
+            role="region"
+            aria-label="Live tracking details"
+          >
+            <button
+              type="button"
+              onClick={() => setTrackOverlayOpen(v => !v)}
+              className="w-full flex items-center justify-between px-4 min-h-11 py-2 hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0"
+              aria-expanded={trackOverlayOpen}
+              aria-controls="live-track-details"
+              aria-label={trackOverlayOpen ? "Collapse live tracking details" : "Expand live tracking details"}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Radio className="w-3.5 h-3.5 text-primary flex-shrink-0" aria-hidden="true" />
+                <p className="text-xs font-semibold truncate">Live · {activeTrip.title}</p>
+                <Badge variant="outline" className="text-[10px] h-5 font-semibold flex-shrink-0">
+                  {trackingIds.length} tracking
+                </Badge>
+              </div>
+              {trackOverlayOpen
+                ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" aria-hidden="true" />
+                : <ChevronUp className="w-4 h-4 text-muted-foreground flex-shrink-0" aria-hidden="true" />}
+            </button>
+            {trackOverlayOpen && (
+              <CardContent id="live-track-details" className="px-3 pb-3 pt-0">
+                <ul className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-0.5 list-none" aria-label="Members currently tracking">
+                  {trackingIds.length === 0 && (
+                    <li className="text-[11px] text-muted-foreground py-1">No one is tracking in this trip right now.</li>
+                  )}
+                  {tripMembers.filter(u => isTracking(u.id)).map(u => (
+                    <li
+                      key={u.id}
+                      className="flex items-center gap-1.5 bg-muted rounded-xl px-2.5 py-1.5 flex-shrink-0"
+                      aria-label={`${u.name}${u.id === currentUser.id ? " (you)" : ""} is sharing live location`}
+                    >
+                      <img src={u.avatar} alt="" className="w-5 h-5 rounded-lg" />
+                      <span className="text-[11px] font-semibold">{u.name.split(" ")[0]}{u.id === currentUser.id ? " (You)" : ""}</span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" aria-hidden="true" />
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            )}
+          </Card>
         </TabsContent>
       </Tabs>
 

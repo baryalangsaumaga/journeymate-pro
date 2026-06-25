@@ -215,8 +215,9 @@ export default function NavigationPage() {
   useEffect(() => {
     const map = mapInstance.current;
     if (!map || !userPos) return;
+    const accText = Math.round(fix?.accuracy ?? 0);
     const labelHtml = `
-      <div style="position:relative;width:18px;height:18px;">
+      <div role="img" aria-label="Your location, GPS signal ${reliability.label}${accText ? `, accurate within ${accText} meters` : ""}" style="position:relative;width:18px;height:18px;">
         <div style="position:absolute;inset:0;border-radius:50%;background:${reliability.color};border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.35)"></div>
         <div style="position:absolute;top:20px;left:50%;transform:translateX(-50%);background:${reliability.color};color:${reliability.text};font:600 9px Inter,sans-serif;padding:1px 6px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);letter-spacing:.02em;">GPS · ${reliability.label}</div>
       </div>`;
@@ -436,6 +437,10 @@ export default function NavigationPage() {
 
   return (
     <div className="relative h-[calc(100dvh-7rem)] overflow-hidden">
+      {/* Screen-reader live region announcing GPS reliability changes */}
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        GPS signal {reliability.label}{fix?.accuracy ? `, accurate within ${Math.round(fix.accuracy)} meters` : ""}
+      </div>
       {/* Map layer — isolated 3D context so siblings aren't pushed behind in stacking */}
       <div className="absolute inset-0 z-0 overflow-hidden" style={{ perspective: "1400px", perspectiveOrigin: "50% 85%" }}>
         <div
