@@ -437,15 +437,16 @@ export default function SocialPage() {
         </TabsContent>
 
         <TabsContent value="tracking" className="flex-1 m-0 flex flex-col min-h-0 overflow-hidden">
-          {/* Split layout: map occupies the upper portion, details panel sits below it
-              so they never overlap (fixes the map covering the tracker details). */}
+          {/* Responsive split: map is capped so the details panel is always visible,
+              even on very short viewports. Map shrinks first; details keeps a min height. */}
           <section
-            className={`relative ${trackOverlayOpen ? "flex-1" : "flex-1"} min-h-0 overflow-hidden`}
+            className="relative flex-[1_1_0%] min-h-[200px] max-h-[60vh] sm:max-h-[65vh] overflow-hidden"
             role="region"
             aria-label={`Live tracking map for ${activeTrip.title}`}
           >
             {/* Remount the map per trip so markers/trails reset cleanly */}
             <TrackingMap key={activeTrip.id} showHeatmap={showHeatmap} members={tripMembers} />
+
             <div className="absolute top-3 right-3 z-30 flex flex-col gap-2 items-end max-w-[calc(100%-1.5rem)]">
               <Button
                 type="button"
@@ -471,11 +472,12 @@ export default function SocialPage() {
           {/* Details panel — sibling, not overlay, so the map can never cover it.
               Stays above the global bottom nav via safe-area padding. */}
           <Card
-            className="border-0 border-t border-border/40 rounded-none bg-card/98 backdrop-blur-md overflow-hidden flex-shrink-0"
+            className="border-0 border-t border-border/40 rounded-none bg-card/98 backdrop-blur-md overflow-hidden flex-[0_0_auto] max-h-[45vh] flex flex-col"
             style={{ paddingBottom: `env(safe-area-inset-bottom, 0px)` }}
             role="region"
             aria-label="Live tracking details"
           >
+
             <button
               type="button"
               onClick={() => setTrackOverlayOpen(v => !v)}
@@ -496,7 +498,8 @@ export default function SocialPage() {
                 : <ChevronUp className="w-4 h-4 text-muted-foreground flex-shrink-0" aria-hidden="true" />}
             </button>
             {trackOverlayOpen && (
-              <CardContent id="live-track-details" className="px-3 pb-3 pt-0">
+              <CardContent id="live-track-details" className="px-3 pb-3 pt-0 overflow-y-auto min-h-0">
+
                 <ul className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-0.5 list-none" aria-label="Members currently tracking">
                   {trackingIds.length === 0 && (
                     <li className="text-[11px] text-muted-foreground py-1">No one is tracking in this trip right now.</li>
