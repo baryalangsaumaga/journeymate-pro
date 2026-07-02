@@ -65,6 +65,20 @@ const maneuverIcon = (m?: string, mod?: string) => {
   return ArrowUp;
 };
 
+// Rotation (deg) for a big on-map guidance arrow based on the next maneuver.
+const maneuverRotation = (m?: string, mod?: string): number => {
+  if (!mod) return 0;
+  if (mod === "uturn") return 180;
+  if (mod === "sharp left") return -135;
+  if (mod === "left") return -90;
+  if (mod === "slight left") return -45;
+  if (mod === "sharp right") return 135;
+  if (mod === "right") return 90;
+  if (mod === "slight right") return 45;
+  return 0;
+};
+
+
 // Whether a route segment passes a toll-ish corridor (very rough heuristic on mock data).
 function routeHasToll(coords: [number, number][] | undefined, mode: string) {
   if (mode !== "car" || !coords?.length) return false;
