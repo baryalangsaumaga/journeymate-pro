@@ -498,7 +498,8 @@ export default function SocialPage() {
                 : <ChevronUp className="w-4 h-4 text-muted-foreground flex-shrink-0" aria-hidden="true" />}
             </button>
             {trackOverlayOpen && (
-              <CardContent id="live-track-details" className="px-3 pb-3 pt-0">
+              <CardContent id="live-track-details" className="px-3 pb-3 pt-0 overflow-y-auto min-h-0">
+
                 <ul className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-0.5 list-none" aria-label="Members currently tracking">
                   {trackingIds.length === 0 && (
                     <li className="text-[11px] text-muted-foreground py-1">No one is tracking in this trip right now.</li>
