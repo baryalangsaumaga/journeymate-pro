@@ -642,6 +642,41 @@ export default function NavigationPage() {
         )}
       </AnimatePresence>
 
+      {/* Big on-map guidance arrow — mirrors the next maneuver so drivers can glance
+          at the tilted 3D map and immediately see where to go. Hidden when arrived. */}
+      <AnimatePresence>
+        {isNavigating && nextStep && nextStep.maneuver !== "arrive" && (
+          <motion.div
+            key={`guide-${stepIdx}`}
+            initial={{ opacity: 0, scale: 0.6, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.6 }}
+            transition={{ type: "spring", stiffness: 260, damping: 22 }}
+            className="pointer-events-none absolute left-1/2 -translate-x-1/2 z-20"
+            style={{ bottom: sheetExpanded ? "38%" : "22%" }}
+            role="img"
+            aria-label={`Guidance arrow: ${nextStep.instruction}`}
+          >
+            <div className="relative">
+              <div
+                className="w-24 h-24 rounded-full bg-primary/85 backdrop-blur-md shadow-travel-lg border-4 border-white/90 flex items-center justify-center"
+                style={{
+                  transform: `rotate(${maneuverRotation(nextStep.maneuver, nextStep.modifier)}deg)`,
+                  transition: "transform 500ms ease-out",
+                }}
+              >
+                <ArrowUp className="w-12 h-12 text-primary-foreground drop-shadow" strokeWidth={3} />
+              </div>
+              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full bg-card/95 backdrop-blur-sm shadow-card-hover border border-border/50 text-[10px] font-bold whitespace-nowrap">
+                {formatDistance(nextStep.distance)}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+
+
       <motion.div
         className="absolute bottom-0 left-0 right-0 glass-ultra rounded-t-3xl z-30 border-t border-border/30"
         animate={{ height: sheetExpanded ? "auto" : 28 }}
