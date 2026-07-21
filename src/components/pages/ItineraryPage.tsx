@@ -143,6 +143,46 @@ export default function ItineraryPage() {
     toast({ title: "📥 Saved Offline", description: "PDF downloaded · trip cached for offline use." });
   };
 
+  // Full "make available offline": fetches each leg's route + primes the map tile
+  // cache for the trip's bounding box so navigation still works without a signal.
+  const handleMakeOffline = async () => {
+    if (selectedTrip.stops.length === 0) {
+      toast({ title: "Add at least one stop first" });
+      return;
+    }
+    toast({ title: "📥 Preparing offline pack…", description: "Downloading routes and map tiles" });
+    try {
+      const allCoords: [number, number][] = [];
+      for (let i = 0; i < selectedTrip.stops.length - 1; i++) {
+        const a = selectedTrip.stops[i].location;
+        const b = selectedTrip.stops[i + 1].location;
+        const plan = await fetchRoutePlan([a.lat, a.lng], [b.lat, b.lng], "car");
+        allCoords.push(...plan.primary.coordinates);
+        const nearby = mockLocations.filter(l =>
+          plan.primary.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
+        );
+        saveTripOffline(`${selectedTrip.id}:leg-${i}`, {
+          destination: b, route: plan.primary, alternates: plan.alternates,
+          nearby, mode: "car", tripTitle: `${selectedTrip.title} · ${b.name}`,
+        });
+      }
+      // Also cache the trip's stops as points.
+      if (allCoords.length === 0) {
+        allCoords.push(...selectedTrip.stops.map(s => [s.location.lat, s.location.lng] as [number, number]));
+      }
+      const { requested, ok } = await prewarmRouteTiles(allCoords, { minZoom: 13, maxZoom: 16, maxTiles: 300 });
+      repo.offlineTrips.add(selectedTrip.id);
+      setTrips(prev => prev.map(t => t.id === selectedTrip.id ? { ...t, isOfflineAvailable: true } : t));
+      setSelectedTrip(prev => ({ ...prev, isOfflineAvailable: true }));
+      toast({
+        title: "✅ Trip available offline",
+        description: `Cached ${ok}/${requested} map tiles + ${selectedTrip.stops.length - 1} routes`,
+      });
+    } catch (e) {
+      toast({ title: "Offline pack failed", description: "Some assets could not be cached.", variant: "destructive" });
+    }
+  };
+
   const handleInvite = () => {
     if (!inviteEmail.trim()) return;
     toast({ title: "📧 Invite Sent!", description: `Invitation sent to ${inviteEmail}.` });
