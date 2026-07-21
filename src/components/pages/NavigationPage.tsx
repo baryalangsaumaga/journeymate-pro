@@ -190,14 +190,33 @@ export default function NavigationPage() {
     }
   }, []);
 
-  // Cache route + nearby places for offline use whenever a new route is computed.
+  // Cache route + alternates + nearby places for offline use.
   useEffect(() => {
     if (!route || !destination) return;
     const nearby = mockLocations.filter(l =>
       route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
     );
-    saveOfflineRoute({ destination, route, nearby, mode: selectedMode });
-  }, [route, destination, selectedMode]);
+    saveOfflineRoute({ destination, route, alternates, nearby, mode: selectedMode });
+    // Also key it by destination id so it can be restored per trip target.
+    saveTripOffline(destination.id, {
+      destination, route, alternates, nearby, mode: selectedMode, tripTitle: destination.name,
+    });
+  }, [route, alternates, destination, selectedMode]);
+
+  // Swap the primary route with the selected alternate.
+  const selectAlternate = (i: number) => {
+    if (i === 0 || i > alternates.length) { setSelectedAltIdx(0); return; }
+    const chosen = alternates[i - 1];
+    const oldPrimary = route;
+    if (!chosen || !oldPrimary) return;
+    const newAlternates = alternates.slice();
+    newAlternates[i - 1] = oldPrimary;
+    setRoute(chosen);
+    setAlternates(newAlternates);
+    setSelectedAltIdx(0);
+    setStepIdx(0);
+    toast({ title: "🔀 Route Switched", description: `${chosen.label ?? "Alternate"} · ${formatDuration(chosen.duration)}` });
+  };
 
 
   // Init map
