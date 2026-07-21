@@ -95,6 +95,10 @@ export default function NavigationPage() {
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [mapStyle, setMapStyle] = useState<MapStyle>("voyager");
   const [route, setRoute] = useState<RouteResult | null>(null);
+  const [alternates, setAlternates] = useState<RouteResult[]>([]);
+  const [selectedAltIdx, setSelectedAltIdx] = useState<number>(0); // 0 = primary
+  const [transitPlans, setTransitPlans] = useState<TransitPlan[]>([]);
+  const [selectedTransitId, setSelectedTransitId] = useState<string | null>(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
   const [destination, setDestination] = useState<Location | null>(null);
@@ -139,6 +143,7 @@ export default function NavigationPage() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const polylineRef = useRef<L.Polyline | null>(null);
+  const altPolylinesRef = useRef<L.Polyline[]>([]);
   const traveledRef = useRef<L.Polyline | null>(null);
   const carMarkerRef = useRef<L.Marker | null>(null);
   const tileRef = useRef<L.TileLayer | null>(null);
