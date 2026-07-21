@@ -16,6 +16,10 @@ import { mockTrips } from "@/data/mockData";
 import type { Trip, Location, ItineraryStop } from "@/types/travel";
 import { generatePDF, downloadJSON } from "@/lib/pdf";
 import { repo } from "@/lib/storage";
+import { fetchRoutePlan } from "@/lib/routing";
+import { prewarmRouteTiles } from "@/lib/offlineTiles";
+import { saveTripOffline } from "@/lib/offlineRoute";
+import { mockLocations } from "@/data/mockData";
 import { ItineraryTimeline } from "@/components/travel/ItineraryTimeline";
 import { TripWizard } from "@/components/travel/TripWizard";
 import { RoutePlannerPanel } from "@/components/travel/RoutePlannerPanel";
@@ -137,6 +141,46 @@ export default function ItineraryPage() {
     setSelectedTrip(prev => ({ ...prev, isOfflineAvailable: true }));
 
     toast({ title: "📥 Saved Offline", description: "PDF downloaded · trip cached for offline use." });
+  };
+
+  // Full "make available offline": fetches each leg's route + primes the map tile
+  // cache for the trip's bounding box so navigation still works without a signal.
+  const handleMakeOffline = async () => {
+    if (selectedTrip.stops.length === 0) {
+      toast({ title: "Add at least one stop first" });
+      return;
+    }
+    toast({ title: "📥 Preparing offline pack…", description: "Downloading routes and map tiles" });
+    try {
+      const allCoords: [number, number][] = [];
+      for (let i = 0; i < selectedTrip.stops.length - 1; i++) {
+        const a = selectedTrip.stops[i].location;
+        const b = selectedTrip.stops[i + 1].location;
+        const plan = await fetchRoutePlan([a.lat, a.lng], [b.lat, b.lng], "car");
+        allCoords.push(...plan.primary.coordinates);
+        const nearby = mockLocations.filter(l =>
+          plan.primary.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
+        );
+        saveTripOffline(`${selectedTrip.id}:leg-${i}`, {
+          destination: b, route: plan.primary, alternates: plan.alternates,
+          nearby, mode: "car", tripTitle: `${selectedTrip.title} · ${b.name}`,
+        });
+      }
+      // Also cache the trip's stops as points.
+      if (allCoords.length === 0) {
+        allCoords.push(...selectedTrip.stops.map(s => [s.location.lat, s.location.lng] as [number, number]));
+      }
+      const { requested, ok } = await prewarmRouteTiles(allCoords, { minZoom: 13, maxZoom: 16, maxTiles: 300 });
+      repo.offlineTrips.add(selectedTrip.id);
+      setTrips(prev => prev.map(t => t.id === selectedTrip.id ? { ...t, isOfflineAvailable: true } : t));
+      setSelectedTrip(prev => ({ ...prev, isOfflineAvailable: true }));
+      toast({
+        title: "✅ Trip available offline",
+        description: `Cached ${ok}/${requested} map tiles + ${selectedTrip.stops.length - 1} routes`,
+      });
+    } catch (e) {
+      toast({ title: "Offline pack failed", description: "Some assets could not be cached.", variant: "destructive" });
+    }
   };
 
   const handleInvite = () => {
@@ -349,8 +393,19 @@ export default function ItineraryPage() {
                       </div>
                     </div>
                     <div className="flex gap-1">
-                      <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={handleShare}><Share2 className="w-3.5 h-3.5" /></Button>
-                      <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={handleDownload}><Download className="w-3.5 h-3.5" /></Button>
+                      <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={handleShare} aria-label="Share trip"><Share2 className="w-3.5 h-3.5" /></Button>
+                      <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={handleDownload} aria-label="Download PDF + JSON"><Download className="w-3.5 h-3.5" /></Button>
+                      <Button
+                        variant={selectedTrip.isOfflineAvailable ? "default" : "outline"}
+                        size="sm"
+                        className="h-8 rounded-xl text-[10px] font-semibold gap-1"
+                        onClick={handleMakeOffline}
+                        aria-label="Make trip available offline"
+                        title="Cache route + map tiles so this trip works offline"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        {selectedTrip.isOfflineAvailable ? "Offline ✓" : "Offline"}
+                      </Button>
                     </div>
                   </div>
                   <div className="mt-3 flex items-center gap-2.5">

@@ -15,7 +15,7 @@ import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { mockLocations } from "@/data/mockData";
-import { fetchRoute, formatDistance, formatDuration, RouteResult, RouteStep } from "@/lib/routing";
+import { fetchRoutePlan, formatDistance, formatDuration, RouteResult, RouteStep, RoutePlan } from "@/lib/routing";
 import { RouteDetailsPanel } from "@/components/travel/RouteDetailsPanel";
 import { MapLayerSwitcher, type MapStyle } from "@/components/travel/MapLayerSwitcher";
 import { PlaceSearchInput } from "@/components/travel/PlaceSearchInput";
@@ -24,7 +24,9 @@ import { useVoiceGuide, loadVoicePrefs, saveVoicePrefs, type VoicePrefs } from "
 import { VoiceSettingsPopover } from "@/components/travel/VoiceSettingsPopover";
 import { useWeather } from "@/hooks/useWeather";
 import { tripSession } from "@/lib/tripSession";
-import { saveOfflineRoute, loadOfflineRoute } from "@/lib/offlineRoute";
+import { saveOfflineRoute, loadOfflineRoute, saveTripOffline } from "@/lib/offlineRoute";
+import { planTransit, type TransitPlan } from "@/lib/transitPlanner";
+import { TransitPlanCard } from "@/components/travel/TransitPlanCard";
 import type { Location } from "@/types/travel";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -93,6 +95,10 @@ export default function NavigationPage() {
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [mapStyle, setMapStyle] = useState<MapStyle>("voyager");
   const [route, setRoute] = useState<RouteResult | null>(null);
+  const [alternates, setAlternates] = useState<RouteResult[]>([]);
+  const [selectedAltIdx, setSelectedAltIdx] = useState<number>(0); // 0 = primary
+  const [transitPlans, setTransitPlans] = useState<TransitPlan[]>([]);
+  const [selectedTransitId, setSelectedTransitId] = useState<string | null>(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
   const [destination, setDestination] = useState<Location | null>(null);
@@ -137,6 +143,7 @@ export default function NavigationPage() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const polylineRef = useRef<L.Polyline | null>(null);
+  const altPolylinesRef = useRef<L.Polyline[]>([]);
   const traveledRef = useRef<L.Polyline | null>(null);
   const carMarkerRef = useRef<L.Marker | null>(null);
   const tileRef = useRef<L.TileLayer | null>(null);
@@ -183,14 +190,33 @@ export default function NavigationPage() {
     }
   }, []);
 
-  // Cache route + nearby places for offline use whenever a new route is computed.
+  // Cache route + alternates + nearby places for offline use.
   useEffect(() => {
     if (!route || !destination) return;
     const nearby = mockLocations.filter(l =>
       route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
     );
-    saveOfflineRoute({ destination, route, nearby, mode: selectedMode });
-  }, [route, destination, selectedMode]);
+    saveOfflineRoute({ destination, route, alternates, nearby, mode: selectedMode });
+    // Also key it by destination id so it can be restored per trip target.
+    saveTripOffline(destination.id, {
+      destination, route, alternates, nearby, mode: selectedMode, tripTitle: destination.name,
+    });
+  }, [route, alternates, destination, selectedMode]);
+
+  // Swap the primary route with the selected alternate.
+  const selectAlternate = (i: number) => {
+    if (i === 0 || i > alternates.length) { setSelectedAltIdx(0); return; }
+    const chosen = alternates[i - 1];
+    const oldPrimary = route;
+    if (!chosen || !oldPrimary) return;
+    const newAlternates = alternates.slice();
+    newAlternates[i - 1] = oldPrimary;
+    setRoute(chosen);
+    setAlternates(newAlternates);
+    setSelectedAltIdx(0);
+    setStepIdx(0);
+    toast({ title: "🔀 Route Switched", description: `${chosen.label ?? "Alternate"} · ${formatDuration(chosen.duration)}` });
+  };
 
 
   // Init map
@@ -267,41 +293,81 @@ export default function NavigationPage() {
     }
   }, [destination?.id]);
 
-  // Fetch route when destination/mode/userPos changes
+  // Fetch route plan (primary + alternates) when destination/mode/userPos changes.
   useEffect(() => {
-    if (!destination) { setRoute(null); return; }
+    if (!destination) { setRoute(null); setAlternates([]); setTransitPlans([]); return; }
     let cancelled = false;
     setLoadingRoute(true);
-    fetchRoute(startPoint, [destination.lat, destination.lng], selectedMode).then(r => {
+
+    // Transit uses the mock multi-leg planner; still fetch a driving line so the
+    // map has a visual reference of the point-to-point path.
+    if (selectedMode === "transit") {
+      const plans = planTransit(
+        { lat: startPoint[0], lng: startPoint[1], name: "Your location" },
+        destination,
+      );
+      setTransitPlans(plans);
+      setSelectedTransitId(plans[0]?.id ?? null);
+    } else {
+      setTransitPlans([]);
+      setSelectedTransitId(null);
+    }
+
+    fetchRoutePlan(startPoint, [destination.lat, destination.lng], selectedMode).then(plan => {
       if (cancelled) return;
-      setRoute(r);
+      setRoute(plan.primary);
+      setAlternates(plan.alternates);
+      setSelectedAltIdx(0);
       setStepIdx(0);
       setLoadingRoute(false);
     });
     return () => { cancelled = true; };
   }, [destination?.id, selectedMode, startPoint[0], startPoint[1]]);
 
-  // Draw the route polyline + place "eateries along the way" markers
+  // Draw primary + alternate polylines + eateries along the way.
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
     polylineRef.current?.remove();
     traveledRef.current?.remove();
+    altPolylinesRef.current.forEach(p => p.remove());
+    altPolylinesRef.current = [];
     eateryMarkersRef.current.forEach(m => m.remove());
     eateryMarkersRef.current = [];
     if (!route) return;
 
+    // Draw alternates first (underneath), muted + dashed.
+    if (!tripMode) {
+      alternates.forEach((alt, i) => {
+        const isSelected = selectedAltIdx === i + 1;
+        const pl = L.polyline(alt.coordinates, {
+          color: isSelected ? "hsl(162, 72%, 40%)" : "hsl(220, 10%, 55%)",
+          weight: isSelected ? 5 : 4,
+          opacity: isSelected ? 0.85 : 0.55,
+          dashArray: isSelected ? undefined : "6, 8",
+        }).addTo(map);
+        pl.on("click", () => setSelectedAltIdx(i + 1));
+        altPolylinesRef.current.push(pl);
+      });
+    }
+
+    const primaryIsActive = selectedAltIdx === 0;
     polylineRef.current = L.polyline(route.coordinates, {
-      color: "hsl(162, 72%, 40%)", weight: 5, opacity: 0.85,
+      color: primaryIsActive ? "hsl(162, 72%, 40%)" : "hsl(220, 10%, 55%)",
+      weight: primaryIsActive ? 5 : 4,
+      opacity: primaryIsActive ? 0.85 : 0.55,
+      dashArray: primaryIsActive ? undefined : "6, 8",
     }).addTo(map);
+    polylineRef.current.on("click", () => setSelectedAltIdx(0));
     traveledRef.current = L.polyline([], {
       color: "hsl(162, 72%, 25%)", weight: 6, opacity: 1,
     }).addTo(map);
 
-    // Eateries near the route
+    // Eateries near the active route
+    const activeRoute = selectedAltIdx === 0 ? route : alternates[selectedAltIdx - 1] ?? route;
     const eateries = mockLocations.filter(l =>
       (l.type === "restaurant" || l.type === "poi") &&
-      route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
+      activeRoute.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
     );
     eateries.forEach(e => {
       const mk = L.marker([e.lat, e.lng], { icon: dot("#f59e0b", 10) })
@@ -309,10 +375,13 @@ export default function NavigationPage() {
       eateryMarkersRef.current.push(mk);
     });
 
-    if (!isNavigating && route.coordinates.length > 1) {
-      map.fitBounds(L.latLngBounds(route.coordinates), { padding: [40, 40] });
+    if (!isNavigating && activeRoute.coordinates.length > 1) {
+      // Higher default zoom for walk so sidewalks are visible.
+      const bounds = L.latLngBounds(activeRoute.coordinates);
+      const maxZoom = selectedMode === "walk" ? 17 : selectedMode === "bike" ? 16 : 15;
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom });
     }
-  }, [route]);
+  }, [route, alternates, selectedAltIdx, tripMode, selectedMode]);
 
   // Live GPS follow: snap user position to the route, advance steps, voice prompts
   useEffect(() => {
@@ -718,6 +787,57 @@ export default function NavigationPage() {
                   </button>
                 ))}
               </div>
+
+              {/* Alternate route chips — appear when OSRM returned more than one path. */}
+              {selectedMode !== "transit" && alternates.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-0.5">
+                    Choose a route
+                  </p>
+                  <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                    {[route, ...alternates].filter(Boolean).map((r, i) => {
+                      if (!r) return null;
+                      const isActive = i === 0;
+                      const label = r.label === "shorter" ? "Shorter" : r.label === "scenic" ? "Scenic" : r.label === "fastest" ? "Fastest" : "Alternate";
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => selectAlternate(i)}
+                          className={`flex-shrink-0 min-w-[110px] px-3 py-2 rounded-xl text-left transition-all tap-highlight border ${
+                            isActive
+                              ? "bg-primary text-primary-foreground border-primary shadow-travel"
+                              : "bg-muted border-border/40 hover:bg-muted/80"
+                          }`}
+                        >
+                          <p className="text-[10px] font-bold">{label}</p>
+                          <p className="text-[11px] font-display font-bold leading-tight">{formatDuration(r.duration)}</p>
+                          <p className={`text-[9px] ${isActive ? "opacity-75" : "text-muted-foreground"}`}>{formatDistance(r.distance)}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Transit plans — mock multi-leg suggestions with fares and transfer hints. */}
+              {selectedMode === "transit" && transitPlans.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-0.5">
+                    Transit options · what to ride
+                  </p>
+                  <div className="space-y-2">
+                    {transitPlans.map(p => (
+                      <TransitPlanCard
+                        key={p.id}
+                        plan={p}
+                        active={selectedTransitId === p.id}
+                        onSelect={() => setSelectedTransitId(p.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
 
               {route && (
                 <Card className="border-0 card-elevated">
