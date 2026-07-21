@@ -788,6 +788,57 @@ export default function NavigationPage() {
                 ))}
               </div>
 
+              {/* Alternate route chips — appear when OSRM returned more than one path. */}
+              {selectedMode !== "transit" && alternates.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-0.5">
+                    Choose a route
+                  </p>
+                  <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                    {[route, ...alternates].filter(Boolean).map((r, i) => {
+                      if (!r) return null;
+                      const isActive = i === 0;
+                      const label = r.label === "shorter" ? "Shorter" : r.label === "scenic" ? "Scenic" : r.label === "fastest" ? "Fastest" : "Alternate";
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => selectAlternate(i)}
+                          className={`flex-shrink-0 min-w-[110px] px-3 py-2 rounded-xl text-left transition-all tap-highlight border ${
+                            isActive
+                              ? "bg-primary text-primary-foreground border-primary shadow-travel"
+                              : "bg-muted border-border/40 hover:bg-muted/80"
+                          }`}
+                        >
+                          <p className="text-[10px] font-bold">{label}</p>
+                          <p className="text-[11px] font-display font-bold leading-tight">{formatDuration(r.duration)}</p>
+                          <p className={`text-[9px] ${isActive ? "opacity-75" : "text-muted-foreground"}`}>{formatDistance(r.distance)}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Transit plans — mock multi-leg suggestions with fares and transfer hints. */}
+              {selectedMode === "transit" && transitPlans.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-0.5">
+                    Transit options · what to ride
+                  </p>
+                  <div className="space-y-2">
+                    {transitPlans.map(p => (
+                      <TransitPlanCard
+                        key={p.id}
+                        plan={p}
+                        active={selectedTransitId === p.id}
+                        onSelect={() => setSelectedTransitId(p.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+
               {route && (
                 <Card className="border-0 card-elevated">
                   <CardContent className="p-3.5">
