@@ -274,41 +274,81 @@ export default function NavigationPage() {
     }
   }, [destination?.id]);
 
-  // Fetch route when destination/mode/userPos changes
+  // Fetch route plan (primary + alternates) when destination/mode/userPos changes.
   useEffect(() => {
-    if (!destination) { setRoute(null); return; }
+    if (!destination) { setRoute(null); setAlternates([]); setTransitPlans([]); return; }
     let cancelled = false;
     setLoadingRoute(true);
-    fetchRoute(startPoint, [destination.lat, destination.lng], selectedMode).then(r => {
+
+    // Transit uses the mock multi-leg planner; still fetch a driving line so the
+    // map has a visual reference of the point-to-point path.
+    if (selectedMode === "transit") {
+      const plans = planTransit(
+        { lat: startPoint[0], lng: startPoint[1], name: "Your location" },
+        destination,
+      );
+      setTransitPlans(plans);
+      setSelectedTransitId(plans[0]?.id ?? null);
+    } else {
+      setTransitPlans([]);
+      setSelectedTransitId(null);
+    }
+
+    fetchRoutePlan(startPoint, [destination.lat, destination.lng], selectedMode).then(plan => {
       if (cancelled) return;
-      setRoute(r);
+      setRoute(plan.primary);
+      setAlternates(plan.alternates);
+      setSelectedAltIdx(0);
       setStepIdx(0);
       setLoadingRoute(false);
     });
     return () => { cancelled = true; };
   }, [destination?.id, selectedMode, startPoint[0], startPoint[1]]);
 
-  // Draw the route polyline + place "eateries along the way" markers
+  // Draw primary + alternate polylines + eateries along the way.
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
     polylineRef.current?.remove();
     traveledRef.current?.remove();
+    altPolylinesRef.current.forEach(p => p.remove());
+    altPolylinesRef.current = [];
     eateryMarkersRef.current.forEach(m => m.remove());
     eateryMarkersRef.current = [];
     if (!route) return;
 
+    // Draw alternates first (underneath), muted + dashed.
+    if (!tripMode) {
+      alternates.forEach((alt, i) => {
+        const isSelected = selectedAltIdx === i + 1;
+        const pl = L.polyline(alt.coordinates, {
+          color: isSelected ? "hsl(162, 72%, 40%)" : "hsl(220, 10%, 55%)",
+          weight: isSelected ? 5 : 4,
+          opacity: isSelected ? 0.85 : 0.55,
+          dashArray: isSelected ? undefined : "6, 8",
+        }).addTo(map);
+        pl.on("click", () => setSelectedAltIdx(i + 1));
+        altPolylinesRef.current.push(pl);
+      });
+    }
+
+    const primaryIsActive = selectedAltIdx === 0;
     polylineRef.current = L.polyline(route.coordinates, {
-      color: "hsl(162, 72%, 40%)", weight: 5, opacity: 0.85,
+      color: primaryIsActive ? "hsl(162, 72%, 40%)" : "hsl(220, 10%, 55%)",
+      weight: primaryIsActive ? 5 : 4,
+      opacity: primaryIsActive ? 0.85 : 0.55,
+      dashArray: primaryIsActive ? undefined : "6, 8",
     }).addTo(map);
+    polylineRef.current.on("click", () => setSelectedAltIdx(0));
     traveledRef.current = L.polyline([], {
       color: "hsl(162, 72%, 25%)", weight: 6, opacity: 1,
     }).addTo(map);
 
-    // Eateries near the route
+    // Eateries near the active route
+    const activeRoute = selectedAltIdx === 0 ? route : alternates[selectedAltIdx - 1] ?? route;
     const eateries = mockLocations.filter(l =>
       (l.type === "restaurant" || l.type === "poi") &&
-      route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
+      activeRoute.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
     );
     eateries.forEach(e => {
       const mk = L.marker([e.lat, e.lng], { icon: dot("#f59e0b", 10) })
@@ -316,10 +356,13 @@ export default function NavigationPage() {
       eateryMarkersRef.current.push(mk);
     });
 
-    if (!isNavigating && route.coordinates.length > 1) {
-      map.fitBounds(L.latLngBounds(route.coordinates), { padding: [40, 40] });
+    if (!isNavigating && activeRoute.coordinates.length > 1) {
+      // Higher default zoom for walk so sidewalks are visible.
+      const bounds = L.latLngBounds(activeRoute.coordinates);
+      const maxZoom = selectedMode === "walk" ? 17 : selectedMode === "bike" ? 16 : 15;
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom });
     }
-  }, [route]);
+  }, [route, alternates, selectedAltIdx, tripMode, selectedMode]);
 
   // Live GPS follow: snap user position to the route, advance steps, voice prompts
   useEffect(() => {
