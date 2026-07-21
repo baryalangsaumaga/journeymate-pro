@@ -393,8 +393,19 @@ export default function ItineraryPage() {
                       </div>
                     </div>
                     <div className="flex gap-1">
-                      <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={handleShare}><Share2 className="w-3.5 h-3.5" /></Button>
-                      <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={handleDownload}><Download className="w-3.5 h-3.5" /></Button>
+                      <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={handleShare} aria-label="Share trip"><Share2 className="w-3.5 h-3.5" /></Button>
+                      <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={handleDownload} aria-label="Download PDF + JSON"><Download className="w-3.5 h-3.5" /></Button>
+                      <Button
+                        variant={selectedTrip.isOfflineAvailable ? "default" : "outline"}
+                        size="sm"
+                        className="h-8 rounded-xl text-[10px] font-semibold gap-1"
+                        onClick={handleMakeOffline}
+                        aria-label="Make trip available offline"
+                        title="Cache route + map tiles so this trip works offline"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        {selectedTrip.isOfflineAvailable ? "Offline ✓" : "Offline"}
+                      </Button>
                     </div>
                   </div>
                   <div className="mt-3 flex items-center gap-2.5">
