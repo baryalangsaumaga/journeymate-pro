@@ -15,7 +15,7 @@ import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { mockLocations } from "@/data/mockData";
-import { fetchRoute, formatDistance, formatDuration, RouteResult, RouteStep } from "@/lib/routing";
+import { fetchRoutePlan, formatDistance, formatDuration, RouteResult, RouteStep, RoutePlan } from "@/lib/routing";
 import { RouteDetailsPanel } from "@/components/travel/RouteDetailsPanel";
 import { MapLayerSwitcher, type MapStyle } from "@/components/travel/MapLayerSwitcher";
 import { PlaceSearchInput } from "@/components/travel/PlaceSearchInput";
@@ -24,7 +24,9 @@ import { useVoiceGuide, loadVoicePrefs, saveVoicePrefs, type VoicePrefs } from "
 import { VoiceSettingsPopover } from "@/components/travel/VoiceSettingsPopover";
 import { useWeather } from "@/hooks/useWeather";
 import { tripSession } from "@/lib/tripSession";
-import { saveOfflineRoute, loadOfflineRoute } from "@/lib/offlineRoute";
+import { saveOfflineRoute, loadOfflineRoute, saveTripOffline } from "@/lib/offlineRoute";
+import { planTransit, type TransitPlan } from "@/lib/transitPlanner";
+import { TransitPlanCard } from "@/components/travel/TransitPlanCard";
 import type { Location } from "@/types/travel";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
