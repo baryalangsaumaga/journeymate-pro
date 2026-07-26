@@ -1,73 +1,96 @@
-# Welcome to your Lovable project
+# Journeymate
 
-## Project info
+Journeymate (also known as IntelliTravel) is a comprehensive full-stack travel and itinerary planning application designed to help users organize their trips, manage their budgets, track expenses, and discover places, all in one seamless interface.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+The project features a modern React frontend and a robust Laravel PHP backend. It is also designed to be cross-platform, capable of running as a web app or a native mobile app using Capacitor.
 
-## How can I edit this code?
+## Features
 
-There are several ways of editing your application.
+- **Dashboard**: A personalized overview of your upcoming trips, budget progress, and active itineraries.
+- **Itinerary Planning**: Build out detailed daily plans with specific stops, locations, and schedules.
+- **Mapping & Navigation**: Integrated mapping using Leaflet to visualize your journey, complete with map layer switching and route rendering.
+- **Budget & Expenses Tracking**: Keep a close eye on your travel spending against your defined budgets.
+- **Reviews & Places**: Discover, track, and review places of interest.
+- **Cross-Platform**: Built as a responsive web application but wrapped with Capacitor for native iOS and Android deployment.
 
-**Use Lovable**
+## Tech Stack
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+### Frontend
+- **Framework**: [React](https://reactjs.org/) + [Vite](https://vitejs.dev/)
+- **Language**: TypeScript
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+- **UI Components**: [shadcn/ui](https://ui.shadcn.com/) & Radix UI
+- **Mobile Integration**: [Capacitor](https://capacitorjs.com/) (iOS/Android)
+- **Maps**: Leaflet 
 
-Changes made via Lovable will be committed automatically to this repo.
+### Backend
+- **Framework**: [Laravel](https://laravel.com/) (PHP)
+- **Architecture**: RESTful API structure with specialized controllers and services (e.g., `LocationController`, `PlaceService`, `ItineraryController`).
+- **Database**: MySQL/MariaDB (Standard Laravel setup)
 
-**Use your preferred IDE**
+## Project Structure
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+The repository is organized into two main parts:
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+- `/src` and `/public`: Contains the React frontend application code, including pages, components, layout files, and assets.
+- `/backend`: Contains the complete Laravel backend application, providing the API endpoints and business logic for locations, routing, and itineraries.
 
-Follow these steps:
+## Getting Started
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### Prerequisites
+- Node.js & npm (for the frontend)
+- PHP & Composer (for the backend)
+- A local web server/database (like Laravel Herd, Valet, or XAMPP)
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+### Frontend Setup
 
-# Step 3: Install the necessary dependencies.
-npm i
+1. Navigate to the project root directory.
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the Vite development server:
+   ```bash
+   npm run dev
+   ```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+### Backend Setup
+
+1. Navigate to the backend directory:
+   ```bash
+   cd backend
+   ```
+2. Install PHP dependencies:
+   ```bash
+   composer install
+   ```
+3. Set up your environment file:
+   ```bash
+   cp .env.example .env
+   php artisan key:generate
+   ```
+4. Configure your database settings in the `.env` file.
+5. Run database migrations:
+   ```bash
+   php artisan migrate
+   ```
+6. Start the Laravel development server (if not using Herd/Valet):
+   ```bash
+   php artisan serve
+   ```
+
+## Mobile Development
+
+This project uses Capacitor to bridge the web app to native mobile platforms. 
+
+To build the web assets and sync configuration to native projects:
+```bash
+npm run build
+npx cap sync
 ```
 
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+To open the respective native IDEs:
+```bash
+npx cap open android
+npx cap open ios
+```
