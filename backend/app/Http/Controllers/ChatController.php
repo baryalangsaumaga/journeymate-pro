@@ -15,7 +15,7 @@ class ChatController extends Controller
         $trip = Trip::findOrFail($tripId);
         
         $isCollaborator = $trip->user_id === $request->user()->id || 
-            $trip->users()->where('user_id', $request->user()->id)->where('status', 'accepted')->exists();
+            $trip->users()->where('trip_user.user_id', $request->user()->id)->where('trip_user.status', 'accepted')->exists();
 
         if (!$isCollaborator) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -33,7 +33,7 @@ class ChatController extends Controller
         $trip = Trip::findOrFail($tripId);
         
         $isCollaborator = $trip->user_id === $request->user()->id || 
-            $trip->users()->where('user_id', $request->user()->id)->where('status', 'accepted')->exists();
+            $trip->users()->where('trip_user.user_id', $request->user()->id)->where('trip_user.status', 'accepted')->exists();
 
         if (!$isCollaborator) {
             return response()->json(['message' => 'Unauthorized'], 403);
