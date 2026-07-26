@@ -1,15 +1,6 @@
 import axios from 'axios';
 
-// Detect environments
-const isProduction = import.meta.env.PROD;
-const isLAN = !isProduction && (
-  window.location.hostname.includes('192.168') || 
-  (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
-);
-
-export const API_URL = isProduction
-  ? import.meta.env.VITE_API_URL
-  : (isLAN ? (import.meta.env.VITE_LAN_API_URL || 'http://192.168.1.11:8000/api') : (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'));
+export const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
 
 // Create axios instance
 const api = axios.create({
