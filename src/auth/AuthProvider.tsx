@@ -62,9 +62,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })
         .catch((error: any) => {
           console.error("getUser error:", error);
+          const errorMsg = (error.message || "Failed to load user profile") + ` (API: ${API_URL})`;
+          alert("Auth Fetch Failed! Please read this:\n\n" + errorMsg);
           toast({
             title: "Auth Fetch Failed",
-            description: (error.message || "Failed to load user profile") + ` (API: ${API_URL})`,
+            description: errorMsg,
             variant: "destructive",
           });
           localStorage.removeItem('auth_token');
