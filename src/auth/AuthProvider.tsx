@@ -60,7 +60,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             stats: userData.stats,
           });
         })
-        .catch(() => {
+        .catch((error: any) => {
+          console.error("getUser error:", error);
+          toast({
+            title: "Auth Fetch Failed",
+            description: (error.message || "Failed to load user profile") + ` (API: ${API_URL})`,
+            variant: "destructive",
+          });
           localStorage.removeItem('auth_token');
           // If token is invalid, fallback to repo data or null
           setUser(repo.auth.get());
