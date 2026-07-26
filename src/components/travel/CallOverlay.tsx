@@ -50,9 +50,10 @@ export function VideoCallOverlay({
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[1000] bg-zinc-950 flex flex-col"
+      className="fixed inset-0 z-[1000] bg-zinc-950/95 backdrop-blur-md flex flex-col md:items-center md:justify-center"
     >
-      <div className="flex-1 relative">
+      <div className="w-full h-full md:w-[400px] md:h-[750px] md:max-h-[90vh] md:rounded-[2.5rem] overflow-hidden bg-zinc-950 flex flex-col md:shadow-2xl md:ring-1 md:ring-white/10 relative">
+        <div className="flex-1 relative">
         <video ref={remoteRef} autoPlay playsInline className="w-full h-full object-cover bg-zinc-900" />
         {(!call.remoteStream || call.callStatus !== "active") && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-zinc-900/80">
@@ -107,6 +108,7 @@ export function VideoCallOverlay({
           </>
         )}
       </div>
+      </div>
     </motion.div>
   );
 }
@@ -148,9 +150,9 @@ export function VoiceCallOverlay({
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[1000] flex flex-col items-center justify-between py-12
-                 bg-gradient-to-b from-primary/90 via-primary to-primary/80 text-primary-foreground"
+      className="fixed inset-0 z-[1000] bg-zinc-950/95 backdrop-blur-md flex flex-col md:items-center md:justify-center"
     >
+      <div className="w-full h-full md:w-[400px] md:h-[750px] md:max-h-[90vh] md:rounded-[2.5rem] overflow-hidden flex flex-col items-center justify-between py-12 md:shadow-2xl md:ring-1 md:ring-white/10 relative bg-gradient-to-b from-primary/90 via-primary to-primary/80 text-primary-foreground">
       <audio ref={remoteAudioRef} autoPlay />
       <div className="flex flex-col items-center gap-4 mt-12">
         <p className="text-sm uppercase tracking-widest text-primary-foreground/70 font-medium">
@@ -192,6 +194,7 @@ export function VoiceCallOverlay({
             </Button>
           </>
         )}
+      </div>
       </div>
     </motion.div>
   );
