@@ -1,5 +1,5 @@
-// TrailSync service worker — app shell + tiles + routing caches.
-const VERSION = "trailsync-v2";
+// Intellitravel service worker — app shell + tiles + routing caches.
+const VERSION = "Intellitravel-v2";
 const SHELL_CACHE = `${VERSION}-shell`;
 const TILE_CACHE = `${VERSION}-tiles`;
 const OSRM_CACHE = `${VERSION}-osrm`;
@@ -15,7 +15,7 @@ const SHELL = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)).catch(() => {}));
+  event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)).catch(() => { }));
   self.skipWaiting();
 });
 
@@ -69,7 +69,7 @@ self.addEventListener("fetch", (event) => {
       fetch(req)
         .then((res) => {
           const copy = res.clone();
-          caches.open(SHELL_CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          caches.open(SHELL_CACHE).then((c) => c.put(req, copy)).catch(() => { });
           return res;
         })
         .catch(() => caches.match("/index.html").then((r) => r || caches.match("/")))
@@ -85,7 +85,7 @@ self.addEventListener("fetch", (event) => {
         const fetchPromise = fetch(req)
           .then((res) => {
             if (res && res.status === 200) {
-              cache.put(req, res.clone()).then(() => trimCache(TILE_CACHE, TILE_MAX)).catch(() => {});
+              cache.put(req, res.clone()).then(() => trimCache(TILE_CACHE, TILE_MAX)).catch(() => { });
             }
             return res;
           })
@@ -113,7 +113,7 @@ self.addEventListener("fetch", (event) => {
             const body = await cloned.blob();
             const headers = new Headers(cloned.headers);
             headers.set("sw-cached-at", String(Date.now()));
-            cache.put(req, new Response(body, { status: 200, headers })).catch(() => {});
+            cache.put(req, new Response(body, { status: 200, headers })).catch(() => { });
           }
           return res;
         } catch {
@@ -131,7 +131,7 @@ self.addEventListener("fetch", (event) => {
         .then((res) => {
           if (res && res.status === 200) {
             const copy = res.clone();
-            caches.open(GEO_CACHE).then((c) => c.put(req, copy)).catch(() => {});
+            caches.open(GEO_CACHE).then((c) => c.put(req, copy)).catch(() => { });
           }
           return res;
         })
@@ -148,7 +148,7 @@ self.addEventListener("fetch", (event) => {
           .then((res) => {
             if (res && res.status === 200) {
               const copy = res.clone();
-              caches.open(SHELL_CACHE).then((c) => c.put(req, copy)).catch(() => {});
+              caches.open(SHELL_CACHE).then((c) => c.put(req, copy)).catch(() => { });
             }
             return res;
           })

@@ -9,6 +9,8 @@
  * subscription when Cloud is enabled — public API stays identical.
  */
 
+import { callSignalApi } from "@/lib/api";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -58,7 +60,8 @@ const ICE_DISCONNECTED_TIMEOUT_MS = 5000;
 let peerConnection: RTCPeerConnection | null = null;
 let localStream: MediaStream | null = null;
 let remoteStream: MediaStream | null = null;
-let mockChannel: BroadcastChannel | null = null;
+let pollInterval: ReturnType<typeof setInterval> | null = null;
+let currentRemoteUserId: string | null = null;
 let isRemoteDescriptionSet = false;
 let pendingIceCandidates: RTCIceCandidateInit[] = [];
 let signalListeners: SignalCallback[] = [];
@@ -86,41 +89,106 @@ function clearDisconnectedTimer(): void {
   }
 }
 
+/**
+ * Strip problematic `a=ssrc:... msid:...` lines that newer Chrome Unified Plan
+ * parsers reject. The msid info is already carried by `a=msid:` lines.
+ */
+function sanitizeSdp(sdp: string | undefined): string {
+  if (!sdp) return "";
+  // Ensure proper CRLF line endings required by the SDP spec
+  const normalized = sdp.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return normalized
+    .split("\n")
+    .filter((line) => {
+      // Remove all a=ssrc attribute lines (msid, cname, label, mslabel) — the
+      // info is already carried by a=msid and a=ssrc-group in Unified Plan
+      if (/^a=ssrc:\d+ (?:msid|cname|label|mslabel):/.test(line)) return false;
+      return true;
+    })
+    .join("\r\n");
+}
+
 // ---------------------------------------------------------------------------
 // Mock signaling channel (BroadcastChannel — cross-tab, same origin)
 // ---------------------------------------------------------------------------
 
-function ensureSignalingChannel(conversationId: string, localUserId: string): void {
-  if (mockChannel && currentConversationId === conversationId) return;
+let currentPollIntervalMs = 3000;
 
-  if (mockChannel) {
-    mockChannel.close();
-    mockChannel = null;
+function startPollingLoop(): void {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
   }
+
+  pollInterval = setInterval(async () => {
+    try {
+      const response = await callSignalApi.receive();
+      const signals = response.data as any[];
+      let hasIncomingOffer = false;
+
+      for (const signalData of signals) {
+        const payload: SignalPayload = {
+          type: signalData.payload.type,
+          from: String(signalData.from_id),
+          to: String(signalData.to_id),
+          conversationId: signalData.conversation_id,
+          sdp: signalData.payload.sdp ? decodeURIComponent(signalData.payload.sdp) : undefined,
+          candidate: signalData.payload.candidate,
+          mode: signalData.payload.mode,
+        };
+
+        if (payload.type === "offer") {
+          currentRemoteUserId = payload.from;
+          hasIncomingOffer = true;
+        }
+
+        for (const listener of signalListeners) listener(payload);
+        void handleIncomingSignal(payload);
+      }
+
+      if (hasIncomingOffer && currentPollIntervalMs !== 1500) {
+        setSignalingSpeed("fast");
+      }
+    } catch (err) {
+      console.error("[Call] Failed to poll signals:", err);
+    }
+  }, currentPollIntervalMs);
+}
+
+function ensureSignalingChannel(conversationId: string, localUserId: string): void {
+  if (currentConversationId === conversationId) return;
 
   currentConversationId = conversationId;
   currentLocalUserId = localUserId;
 
-  if (typeof BroadcastChannel === "undefined") {
-    console.warn("[Call] BroadcastChannel unsupported — calls limited to single tab");
-    return;
-  }
-
-  mockChannel = new BroadcastChannel(getChannelName(conversationId));
-  mockChannel.onmessage = (event) => {
-    const signal = event.data as SignalPayload;
-    if (signal.from === localUserId) return;
-    for (const listener of signalListeners) listener(signal);
-    void handleIncomingSignal(signal);
-  };
+  startPollingLoop();
 }
 
-function sendSignal(payload: SignalPayload): void {
-  if (!mockChannel) {
-    console.warn("[Call] No signaling channel — cannot send", payload.type);
+export function setSignalingSpeed(speed: "fast" | "slow"): void {
+  const newInterval = speed === "fast" ? 1500 : 3000;
+  if (currentPollIntervalMs === newInterval) return;
+
+  currentPollIntervalMs = newInterval;
+  if (currentConversationId && currentLocalUserId) {
+    startPollingLoop();
+  }
+}
+
+async function sendSignal(payload: SignalPayload): Promise<void> {
+  const targetId = payload.to || currentRemoteUserId;
+  if (!targetId) {
+    console.warn("[Call] No remote user ID for signal", payload.type);
     return;
   }
-  mockChannel.postMessage(payload);
+  try {
+    const outPayload = { ...payload };
+    if (outPayload.sdp) {
+      outPayload.sdp = encodeURIComponent(outPayload.sdp);
+    }
+    await callSignalApi.send(outPayload.conversationId, Number(targetId), outPayload);
+  } catch (err) {
+    console.error("[Call] Failed to send signal:", err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -195,7 +263,7 @@ function createPeerConnection(conversationId: string, localUserId: string): RTCP
       sendSignal({
         type: "ice-candidate",
         from: localUserId,
-        to: "",
+        to: currentRemoteUserId || "",
         conversationId,
         candidate: event.candidate.toJSON(),
       });
@@ -249,7 +317,7 @@ async function handleIncomingSignal(signal: SignalPayload): Promise<void> {
       if (!peerConnection) return;
       try {
         await peerConnection.setRemoteDescription(
-          new RTCSessionDescription({ type: "answer", sdp: signal.sdp })
+          new RTCSessionDescription({ type: "answer", sdp: sanitizeSdp(signal.sdp) })
         );
         isRemoteDescriptionSet = true;
         await flushPendingCandidates();
@@ -287,6 +355,8 @@ export async function startCall(
   mode: CallMode = "video"
 ): Promise<{ localStream: MediaStream; remoteStream: MediaStream }> {
   ensureSignalingChannel(conversationId, localUserId);
+  setSignalingSpeed("fast");
+  currentRemoteUserId = remoteUserId;
   currentMode = mode;
   pendingIceCandidates = [];
 
@@ -319,6 +389,8 @@ export async function acceptCall(
   mode: CallMode = "video"
 ): Promise<{ localStream: MediaStream; remoteStream: MediaStream }> {
   ensureSignalingChannel(conversationId, localUserId);
+  setSignalingSpeed("fast");
+  currentRemoteUserId = remoteUserId;
   currentMode = mode;
 
   let stream: MediaStream;
@@ -331,7 +403,7 @@ export async function acceptCall(
   }
 
   const pc = createPeerConnection(conversationId, localUserId);
-  await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: offerSdp }));
+  await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: sanitizeSdp(offerSdp) }));
   isRemoteDescriptionSet = true;
   await flushPendingCandidates();
 
@@ -355,7 +427,7 @@ export function endCall(reason: "hangup" | "reject" | "busy" = "hangup"): void {
     sendSignal({
       type: reason,
       from: currentLocalUserId,
-      to: "",
+      to: currentRemoteUserId || "",
       conversationId: currentConversationId,
     });
   }
@@ -429,16 +501,18 @@ export function cleanupCall(): void {
   }
   isRemoteDescriptionSet = false;
   pendingIceCandidates = [];
+  setSignalingSpeed("slow");
 }
 
 export function cleanup(): void {
   cleanupCall();
-  if (mockChannel) {
-    mockChannel.close();
-    mockChannel = null;
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
   }
   currentConversationId = null;
   currentLocalUserId = null;
+  currentRemoteUserId = null;
 }
 
 export function getCallDebugInfo(): Record<string, unknown> {

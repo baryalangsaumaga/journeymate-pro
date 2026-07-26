@@ -3,13 +3,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Bell, Check, CheckCheck, MapPin, DollarSign, Users,
   Navigation, Star, AlertTriangle, Clock, Trash2, Settings,
-  MessageSquare, Route, Zap, Gift
+  MessageSquare, Route, Zap, Gift, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
+import { useNotifications } from "@/hooks/useNotifications";
 
 export interface Notification {
   id: string;
@@ -124,21 +125,34 @@ interface Props {
 }
 
 export default function NotificationDrawer({ open, onClose }: Props) {
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
+  const {
+    notifications,
+    unreadCount,
+    markRead,
+    markAllRead,
+    deleteNotification,
+    handleAction,
+  } = useNotifications();
+
   const [activeTab, setActiveTab] = useState("all");
+  const [actioningId, setActioningId] = useState<string | null>(null);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-
-  const markRead = (id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-  };
-
-  const markAllRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-  };
-
-  const deleteNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+  const handleNotificationAction = (id: string, actionType: string) => {
+    if (!actionType) return;
+    setActioningId(id);
+    handleAction(
+      { id, actionType },
+      {
+        onSuccess: () => {
+          toast({ title: "Success", description: "Action completed successfully." });
+          setActioningId(null);
+        },
+        onError: () => {
+          toast({ title: "Error", description: "Failed to perform action.", variant: "destructive" });
+          setActioningId(null);
+        }
+      }
+    );
   };
 
   const filtered = notifications.filter(n => {
@@ -180,7 +194,7 @@ export default function NotificationDrawer({ open, onClose }: Props) {
               </div>
               <div className="flex items-center gap-1">
                 {unreadCount > 0 && (
-                  <Button variant="ghost" size="sm" className="h-8 text-[11px] rounded-xl font-semibold text-primary gap-1" onClick={markAllRead}>
+                  <Button variant="ghost" size="sm" className="h-8 text-[11px] rounded-xl font-semibold text-primary gap-1" onClick={() => markAllRead()}>
                     <CheckCheck className="w-3.5 h-3.5" /> Read all
                   </Button>
                 )}
@@ -254,7 +268,7 @@ export default function NotificationDrawer({ open, onClose }: Props) {
                           className={`flex gap-3 p-3 rounded-xl transition-all cursor-pointer tap-highlight ${
                             notification.read ? "opacity-70" : "bg-primary/3"
                           }`}
-                          onClick={() => markRead(notification.id)}
+                          onClick={() => { if (!notification.read) markRead(notification.id); }}
                         >
                           <div className="relative flex-shrink-0">
                             {notification.avatar ? (
@@ -280,14 +294,38 @@ export default function NotificationDrawer({ open, onClose }: Props) {
                             <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed line-clamp-2">
                               {notification.message}
                             </p>
-                            {notification.actionLabel && (
-                              <Button
-                                size="sm"
-                                className="h-6 text-[10px] mt-2 rounded-lg font-semibold px-3 gap-1"
-                                onClick={(e) => { e.stopPropagation(); markRead(notification.id); toast({ title: notification.actionLabel, description: notification.title }); }}
-                              >
-                                {notification.actionLabel}
-                              </Button>
+                            {notification.actionLabel && !notification.read && (
+                              <div className="flex gap-1.5 mt-2">
+                                <Button
+                                  size="sm"
+                                  className="h-6.5 text-[10px] rounded-lg font-semibold px-3 gap-1 bg-primary text-primary-foreground hover:bg-primary/90"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleNotificationAction(notification.id, notification.actionId || "accept_invite");
+                                  }}
+                                  disabled={actioningId === notification.id}
+                                >
+                                  {actioningId === notification.id ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    notification.actionLabel
+                                  )}
+                                </Button>
+                                {notification.actionId === "accept_invite" && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6.5 text-[10px] rounded-lg font-semibold px-3 gap-1"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleNotificationAction(notification.id, "decline_invite");
+                                    }}
+                                    disabled={actioningId === notification.id}
+                                  >
+                                    Decline
+                                  </Button>
+                                )}
+                              </div>
                             )}
                           </div>
                           <Button

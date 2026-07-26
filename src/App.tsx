@@ -1,18 +1,43 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { get, set, del } from "idb-keyval";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import AuthCallback from "./pages/AuthCallback";
 import { I18nProvider } from "./i18n/I18nProvider";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { AuthProvider } from "./auth/AuthProvider";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      gcTime: 1000 * 60 * 60 * 24 * 7, // 1 week gcTime
+    },
+  },
+});
+
+const idbPersister = {
+  persistClient: async (client: any) => {
+    await set('journeymate-query-cache', client);
+  },
+  restoreClient: async () => {
+    return await get<any>('journeymate-query-cache');
+  },
+  removeClient: async () => {
+    await del('journeymate-query-cache');
+  },
+};
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
+  <PersistQueryClientProvider 
+    client={queryClient} 
+    persistOptions={{ persister: idbPersister }}
+  >
     <ThemeProvider>
       <I18nProvider>
         <AuthProvider>
@@ -22,6 +47,7 @@ const App = () => (
             <BrowserRouter>
               <Routes>
                 <Route path="/" element={<Index />} />
+                <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </BrowserRouter>
@@ -29,7 +55,7 @@ const App = () => (
         </AuthProvider>
       </I18nProvider>
     </ThemeProvider>
-  </QueryClientProvider>
+  </PersistQueryClientProvider>
 );
 
 export default App;

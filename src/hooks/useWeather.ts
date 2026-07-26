@@ -1,6 +1,5 @@
-// Mock weather hook — deterministic per lat/lng so the UI is stable across renders.
-// Swap the body with a real API call later without touching consumers.
 import { useEffect, useState } from "react";
+import { weatherApi } from "@/lib/api";
 import type { WeatherCondition } from "@/types/travel";
 
 export interface WeatherSnapshot {
@@ -14,13 +13,8 @@ export interface WeatherSnapshot {
   summary: string;
 }
 
-const CONDITIONS: WeatherCondition[] = ["sunny", "cloudy", "rainy", "stormy", "snowy", "foggy", "windy"];
-
-// Deterministic pseudo-random based on coordinate hash.
-function seeded(lat: number, lng: number, salt = 0): number {
-  const n = Math.sin((lat * 12.9898 + lng * 78.233 + salt) * 43758.5453) * 10000;
-  return n - Math.floor(n);
-}
+const snap = (v: number) => Math.round(v * 100) / 100;
+const weatherCache: Record<string, WeatherSnapshot> = {};
 
 export function useWeather(lat?: number, lng?: number) {
   const [data, setData] = useState<WeatherSnapshot | null>(null);
@@ -28,33 +22,71 @@ export function useWeather(lat?: number, lng?: number) {
 
   useEffect(() => {
     if (lat == null || lng == null) return;
-    setLoading(true);
-    // Simulate network latency.
-    const handle = setTimeout(() => {
-      const cond = CONDITIONS[Math.floor(seeded(lat, lng) * CONDITIONS.length)];
-      const tempC = Math.round(18 + seeded(lat, lng, 1) * 18);
-      setData({
-        condition: cond,
-        tempC,
-        feelsLikeC: tempC + Math.round(seeded(lat, lng, 2) * 4 - 2),
-        humidity: Math.round(40 + seeded(lat, lng, 3) * 50),
-        windKph: Math.round(seeded(lat, lng, 4) * 35),
-        precipMm: Math.round(seeded(lat, lng, 5) * 10) / 10,
-        uvIndex: Math.round(seeded(lat, lng, 6) * 11),
-        summary: humanize(cond, tempC),
-      });
-      setLoading(false);
-    }, 250);
-    return () => clearTimeout(handle);
+
+    const cacheKey = `${snap(lat)}_${snap(lng)}`;
+    if (weatherCache[cacheKey]) {
+      setData(weatherCache[cacheKey]);
+      return;
+    }
+
+    let mounted = true;
+    
+    async function fetchWeather() {
+      setLoading(true);
+      try {
+        const res = await weatherApi.getWeather({ lat: lat!, lng: lng! });
+        if (mounted) {
+          // Map backend format to WeatherSnapshot
+          const w = res.data;
+          
+          // Try to map icon to local condition string if it doesn't match perfectly
+          let cond: WeatherCondition = "sunny";
+          const lowerSummary = String(w.summary || '').toLowerCase();
+          if (lowerSummary.includes('rain')) cond = "rainy";
+          else if (lowerSummary.includes('cloud')) cond = "cloudy";
+          else if (lowerSummary.includes('storm')) cond = "stormy";
+          else if (lowerSummary.includes('snow')) cond = "snowy";
+          else if (lowerSummary.includes('fog')) cond = "foggy";
+          else if (lowerSummary.includes('wind')) cond = "windy";
+
+          const snapshot: WeatherSnapshot = {
+            condition: cond,
+            tempC: Math.round(w.tempC || 25),
+            feelsLikeC: Math.round(w.feelsLikeC || w.tempC || 27),
+            humidity: Math.round(w.humidity || 50),
+            windKph: Math.round(w.windKph || 10),
+            precipMm: w.precipMm || 0,
+            uvIndex: w.uvIndex || 0,
+            summary: w.summary || "Clear skies",
+          };
+          weatherCache[cacheKey] = snapshot;
+          setData(snapshot);
+        }
+      } catch (e) {
+        if (mounted) {
+          // Fallback if weather API fails
+          setData({
+            condition: "sunny",
+            tempC: 28,
+            feelsLikeC: 30,
+            humidity: 60,
+            windKph: 10,
+            precipMm: 0,
+            uvIndex: 5,
+            summary: "Sunny",
+          });
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+    
+    fetchWeather();
+    
+    return () => { mounted = false; };
   }, [lat, lng]);
 
   return { data, loading };
-}
-
-function humanize(c: WeatherCondition, t: number): string {
-  const base: Record<WeatherCondition, string> = {
-    sunny: "Clear skies", cloudy: "Overcast", rainy: "Light showers",
-    stormy: "Thunderstorms", snowy: "Snowfall", foggy: "Low visibility", windy: "Gusty winds",
-  };
-  return `${base[c]} · ${t}°C`;
 }

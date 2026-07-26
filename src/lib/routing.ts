@@ -11,7 +11,7 @@ export interface RouteStep {
   location: [number, number]; // [lat, lng]
 }
 
-export type RouteLabel = "fastest" | "shorter" | "scenic" | "alternate";
+export type RouteLabel = "fastest" | "shorter" | "scenic" | "alternate" | "toll-free";
 
 export interface RouteResult {
   coordinates: [number, number][]; // [lat,lng]
@@ -56,44 +56,68 @@ function parseRoute(route: any): RouteResult {
   return { coordinates, distance: route.distance, duration: route.duration, steps };
 }
 
+import { itinerariesApi } from "@/lib/api";
+
 export async function fetchRoutePlan(
   start: [number, number],
   end: [number, number],
   mode: Mode = "car"
-): Promise<RoutePlan> {
-  const profile = PROFILE_MAP[mode] || "driving";
-  const coords = `${start[1]},${start[0]};${end[1]},${end[0]}`;
-  // Walk/bike get continue_straight=false for more path variety.
-  const extra = mode === "walk" || mode === "bike" ? "&continue_straight=false" : "";
-
+): Promise<RoutePlan & { speed_limits?: any[] }> {
   try {
-    const res = await fetch(osrmUrl(profile, coords, true, extra));
-    if (!res.ok) throw new Error(`OSRM ${res.status}`);
-    const data = await res.json();
-    if (!data.routes?.length) throw new Error("no route");
-
-    const all = data.routes.map(parseRoute);
-    const primary = all[0];
-    const alternates = all.slice(1, 3);
-
-    // Label by relative characteristics vs primary.
-    const labeled: RouteResult[] = [primary, ...alternates].map((r, i) => {
-      if (i === 0) return { ...r, label: "fastest" as RouteLabel };
-      const distDelta = r.distance - primary.distance;
-      const durDelta = r.duration - primary.duration;
-      let label: RouteLabel = "alternate";
-      if (distDelta < -100) label = "shorter";
-      else if (durDelta > primary.duration * 0.1) label = "scenic";
-      return { ...r, label };
+    const res = await itinerariesApi.calculateGeneric({
+      start_lat: start[0],
+      start_lng: start[1],
+      end_lat: end[0],
+      end_lng: end[1],
+      mode
     });
 
-    return { primary: labeled[0], alternates: labeled.slice(1) };
-  } catch {
+    const data = res.data;
+    if (!data.primary) throw new Error("no route");
+
+    const primary = parseRoute(data.primary);
+    primary.label = "fastest";
+    
+    if (mode === "transit") {
+      // Geoapify provides accurate transit duration, no scaling needed.
+    }
+
+    const alternates = (data.alternatives || []).map((r: any) => {
+        const parsed = parseRoute(r);
+        if (mode === "transit") {
+          // No scaling needed.
+        }
+        const distDelta = parsed.distance - primary.distance;
+        const durDelta = parsed.duration - primary.duration;
+        let label: RouteLabel = "alternate";
+        
+        if (r.is_toll_free) {
+            label = "toll-free";
+        } else if (distDelta < -100) {
+            label = "shorter";
+        } else if (durDelta > primary.duration * 0.1) {
+            label = "scenic";
+        }
+        
+        parsed.label = label;
+        return parsed;
+    });
+
+    return { primary, alternates, speed_limits: data.speed_limits };
+  } catch (err) {
+    console.error("Backend route fetch failed, falling back", err);
+    
+    // Choose realistic speed divisor based on travel mode
+    let speed = 13.9; // driving speed (~50 km/h)
+    if (mode === "walk") speed = 1.4; // walking speed (~5 km/h)
+    else if (mode === "bike") speed = 4.5; // biking speed (~16 km/h)
+    else if (mode === "transit") speed = 6.0; // transit speed (~22 km/h)
+
     // Fallback straight line — no alternates.
     const line: RouteResult = {
       coordinates: [start, end],
       distance: haversine(start, end),
-      duration: haversine(start, end) / 13.9,
+      duration: haversine(start, end) / speed,
       steps: [
         { instruction: "Head toward destination", distance: haversine(start, end), duration: 0, maneuver: "depart", name: "", location: start },
         { instruction: "Arrive at destination", distance: 0, duration: 0, maneuver: "arrive", name: "", location: end },

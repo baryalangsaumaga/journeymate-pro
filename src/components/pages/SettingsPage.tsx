@@ -91,7 +91,7 @@ export default function SettingsPage() {
     <motion.div variants={container} initial="hidden" animate="show" className="px-4 py-4 pb-6 space-y-4">
       <motion.div variants={item}>
         <h2 className="font-display font-bold text-xl tracking-tight">Settings</h2>
-        <p className="text-[11px] text-muted-foreground mt-0.5">Customize your TrailSync experience</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">Customize your Intellitravel experience</p>
       </motion.div>
 
       {/* Profile */}
@@ -153,9 +153,8 @@ export default function SettingsPage() {
                   <button
                     key={th.id}
                     onClick={() => handleThemeChange(th.id)}
-                    className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl transition-all tap-highlight ${
-                      theme === th.id ? "bg-primary/8 ring-2 ring-primary" : "bg-muted"
-                    }`}
+                    className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl transition-all tap-highlight ${theme === th.id ? "bg-primary/8 ring-2 ring-primary" : "bg-muted"
+                      }`}
                   >
                     <div className="flex gap-0.5">
                       {th.colors.map((c, i) => (
@@ -187,9 +186,8 @@ export default function SettingsPage() {
                 <button
                   key={l.code}
                   onClick={() => handleLangChange(l.code)}
-                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs transition-all tap-highlight ${
-                    lang === l.code ? "bg-primary/8 text-primary ring-1 ring-primary/20 font-semibold" : "bg-muted text-foreground hover:bg-muted/80 font-medium"
-                  }`}
+                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs transition-all tap-highlight ${lang === l.code ? "bg-primary/8 text-primary ring-1 ring-primary/20 font-semibold" : "bg-muted text-foreground hover:bg-muted/80 font-medium"
+                    }`}
                 >
                   <span className="text-sm">{l.flag}</span>
                   <span>{l.name}</span>
@@ -263,7 +261,7 @@ export default function SettingsPage() {
         </Button>
       </motion.div>
 
-      <p className="text-center text-[10px] text-muted-foreground font-medium">TrailSync v2.1.0 · Made with ❤️</p>
+      <p className="text-center text-[10px] text-muted-foreground font-medium">Intellitravel v2.1.0 · Made with ❤️</p>
 
       {/* Edit Profile Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

@@ -2,7 +2,7 @@
 // All app data flows through this repository. Today it uses localStorage.
 // Tomorrow: replace each method body with a Supabase/Cloud call. Same shape.
 
-const NS = "trailsync:v1";
+const NS = "Intellitravel:v1";
 const k = (key: string) => `${NS}:${key}`;
 
 function read<T>(key: string, fallback: T): T {
@@ -94,5 +94,9 @@ export const repo = {
   backups: {
     list: () => read<Array<{ id: string; date: string; type: string; size: string; status: string; payload?: string }>>("backups", []),
     add: (entry: any) => write("backups", [entry, ...read<any[]>("backups", [])].slice(0, 20)),
+  },
+  reports: {
+    list: () => read<Array<{ name: string; date: string; size: string }>>("reports", []),
+    add: (entry: { name: string; date: string; size: string }) => write("reports", [entry, ...read<any[]>("reports", [])].slice(0, 10)),
   },
 };

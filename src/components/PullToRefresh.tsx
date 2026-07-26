@@ -65,7 +65,7 @@ export default function PullToRefresh({ onRefresh, children, className = "" }: P
   }, [pullDistance, refreshing, onRefresh]);
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative flex flex-col ${className}`}>
       {/* Pull indicator */}
       <motion.div
         className="absolute left-1/2 -translate-x-1/2 z-50 flex items-center justify-center"
@@ -85,7 +85,7 @@ export default function PullToRefresh({ onRefresh, children, className = "" }: P
 
       <div
         ref={containerRef}
-        className="h-full overflow-y-auto overflow-x-hidden overscroll-none"
+        className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden overscroll-none"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}

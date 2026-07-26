@@ -1,20 +1,20 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   Search, MapPin, Star, Hotel, UtensilsCrossed,
   Fuel, Eye, Landmark, SlidersHorizontal, Heart,
-  TrendingUp, Compass, Clock, Locate
+  TrendingUp, Compass, Clock, Locate, Loader2
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
-import { mockLocations } from "@/data/mockData";
-import { PlaceDetailsSheet } from "@/components/travel/PlaceDetailsSheet";
+import { PlaceDetailsSheet, placeDetailsCache } from "@/components/travel/PlaceDetailsSheet";
 import { useGeolocation, distanceMeters } from "@/hooks/useGeolocation";
 import { tripSession, appNavigate } from "@/lib/tripSession";
 import type { Location } from "@/types/travel";
+import { usePlaces } from "@/hooks/usePlaces";
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
@@ -51,16 +51,36 @@ export default function ExplorePage() {
   const { fix } = useGeolocation();
   const userPos = fix ? { lat: fix.lat, lng: fix.lng } : { lat: 14.5895, lng: 120.9740 };
 
+  // Main locations feed matching search query and active category filter
+  const { places: apiLocations, isLoading, isFetching } = usePlaces({ 
+    lat: userPos.lat, 
+    lng: userPos.lng, 
+    query: searchQuery,
+    category: activeCategory === "all" ? undefined : activeCategory
+  });
+
+  // Dedicated query feeds to show actual Hotels and Restaurants in the summary sections
+  const { places: hotelsList } = usePlaces({ lat: userPos.lat, lng: userPos.lng, category: "hotel" });
+  const { places: foodList } = usePlaces({ lat: userPos.lat, lng: userPos.lng, category: "restaurant" });
+
+  // Automatically pre-populate the PlaceDetailsSheet cache to avoid fetching on sheet open
+  useEffect(() => {
+    const allFetched = [...apiLocations, ...hotelsList, ...foodList];
+    allFetched.forEach(loc => {
+      const cacheKey = loc.id || `${loc.name}_${loc.lat}_${loc.lng}`;
+      if (!placeDetailsCache[cacheKey]) {
+        placeDetailsCache[cacheKey] = loc;
+      }
+    });
+  }, [apiLocations, hotelsList, foodList]);
+
   const withDistance = useMemo(
-    () => mockLocations.map(l => ({ ...l, _dist: distanceMeters(userPos, l) })),
-    [userPos.lat, userPos.lng],
+    () => apiLocations.map(l => ({ ...l, _dist: distanceMeters(userPos, l) })),
+    [userPos.lat, userPos.lng, apiLocations],
   );
 
   const filteredLocations = withDistance
-    .filter(l =>
-      (activeCategory === "all" || l.type === activeCategory) &&
-      (!searchQuery || l.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    )
+    .filter(l => (activeCategory === "all" || l.type === activeCategory))
     .sort((a, b) => {
       if (sortBy === "rating") return (b.rating ?? 0) - (a.rating ?? 0);
       if (sortBy === "name") return a.name.localeCompare(b.name);
@@ -69,12 +89,12 @@ export default function ExplorePage() {
 
   // GPS-aware "near you" feeds
   const nearbyHotels = useMemo(
-    () => withDistance.filter(l => l.type === "hotel").sort((a, b) => a._dist - b._dist).slice(0, 5),
-    [withDistance],
+    () => hotelsList.map(l => ({ ...l, _dist: distanceMeters(userPos, l) })).sort((a, b) => a._dist - b._dist).slice(0, 5),
+    [hotelsList, userPos],
   );
   const nearbyFood = useMemo(
-    () => withDistance.filter(l => l.type === "restaurant" || l.type === "poi").sort((a, b) => a._dist - b._dist).slice(0, 6),
-    [withDistance],
+    () => foodList.map(l => ({ ...l, _dist: distanceMeters(userPos, l) })).sort((a, b) => a._dist - b._dist).slice(0, 6),
+    [foodList, userPos],
   );
 
   const toggleFavorite = (id: string, name: string) => {
@@ -105,7 +125,11 @@ export default function ExplorePage() {
       </motion.div>
 
       <motion.div variants={item} className="relative">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        {isFetching ? (
+          <Loader2 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-primary animate-spin" />
+        ) : (
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        )}
         <Input
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
@@ -148,154 +172,169 @@ export default function ExplorePage() {
         ))}
       </motion.div>
 
-      {/* Experiences */}
-      {activeCategory === "all" && (
-        <motion.div variants={item}>
-          <div className="flex items-center justify-between mb-2.5">
-            <h3 className="section-header flex items-center gap-1.5">
-              <Star className="w-4 h-4 text-accent" /> Top Experiences
-            </h3>
-            <Badge variant="outline" className="text-[9px] h-5 font-semibold">
-              <TrendingUp className="w-2.5 h-2.5 mr-0.5" /> Popular
-            </Badge>
-          </div>
-          <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4">
-            {experiences.map((exp, i) => (
-              <Card key={i} className="border-0 card-interactive min-w-[200px] flex-shrink-0 cursor-pointer"
-                onClick={() => openDetails(asPlace(exp.name, exp.desc, exp.rating, exp.lat, exp.lng, "poi"))}
-              >
-                <CardContent className="p-3.5">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-3xl">{exp.image}</span>
-                    <Badge className="text-[8px] h-[16px] bg-success/10 text-success font-semibold border-0">Bookable</Badge>
-                  </div>
-                  <h4 className="font-semibold text-[13px]">{exp.name}</h4>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{exp.desc}</p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <div className="flex items-center gap-0.5">
-                      <Star className="w-3 h-3 text-accent fill-accent" />
-                      <span className="text-[11px] font-semibold">{exp.rating}</span>
-                    </div>
-                    <Badge variant="outline" className="text-[9px] h-[16px] gap-0.5 font-medium">
-                      <Clock className="w-2 h-2" /> {exp.duration}
-                    </Badge>
-                  </div>
-                  <p className="text-xs font-bold text-primary mt-2">{exp.price}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* Hotels — near you */}
-      {(activeCategory === "all" || activeCategory === "hotel") && nearbyHotels.length > 0 && (
-        <motion.div variants={item}>
-          <div className="flex items-center justify-between mb-2.5">
-            <h3 className="section-header flex items-center gap-1.5">
-              <Hotel className="w-4 h-4 text-primary" /> Hotels Near You
-            </h3>
-            <Badge variant="outline" className="text-[9px] h-5 font-semibold">Near you</Badge>
-          </div>
-          <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4">
-            {nearbyHotels.map(h => (
-              <Card key={h.id} className="border-0 card-interactive min-w-[170px] flex-shrink-0 cursor-pointer" onClick={() => openDetails(h)}>
-                <CardContent className="p-3.5">
-                  <div className="flex items-start justify-between">
-                    <span className="text-2xl">🏨</span>
-                    <Badge className="text-[8px] h-[16px] bg-accent/10 text-accent font-semibold">Hotel</Badge>
-                  </div>
-                  <h4 className="font-semibold text-[13px] mt-2 truncate">{h.name}</h4>
-                  <div className="flex items-center gap-1 mt-1">
-                    <Star className="w-3 h-3 text-accent fill-accent" />
-                    <span className="text-[11px] font-medium">{h.rating}</span>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-1.5">{fmtDist(h._dist)} away</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* Food — near you */}
-      {(activeCategory === "all" || activeCategory === "restaurant") && nearbyFood.length > 0 && (
-        <motion.div variants={item}>
-          <div className="flex items-center justify-between mb-2.5">
-            <h3 className="section-header flex items-center gap-1.5">
-              <UtensilsCrossed className="w-4 h-4 text-accent" /> Food & Dining Near You
-            </h3>
-            <Badge variant="outline" className="text-[9px] h-5 font-semibold">
-              <TrendingUp className="w-2.5 h-2.5 mr-0.5" /> Trending
-            </Badge>
-          </div>
-          <div className="space-y-2">
-            {nearbyFood.map(f => (
-              <Card key={f.id} className="border-0 card-interactive cursor-pointer" onClick={() => openDetails(f)}>
-                <CardContent className="p-3.5 flex items-center gap-3">
-                  <span className="text-2xl">🍽️</span>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-[13px] truncate">{f.name}</h4>
-                    <p className="text-[10px] text-muted-foreground truncate">{f.description}</p>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <div className="flex items-center gap-0.5">
-                      <Star className="w-3 h-3 text-accent fill-accent" />
-                      <span className="text-[11px] font-bold">{f.rating}</span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">{fmtDist(f._dist)}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* All — sorted by GPS distance */}
-      <motion.div variants={item}>
-        <h3 className="section-header mb-2.5">
-          {activeCategory === "all" ? "Places Near You" : categories.find(c => c.id === activeCategory)?.label}
-        </h3>
-        {filteredLocations.length === 0 && (
-          <div className="flex flex-col items-center py-12 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center mb-3">
-              <Search className="w-6 h-6 text-muted-foreground" />
-            </div>
-            <p className="text-sm font-semibold text-muted-foreground">No results found</p>
-          </div>
-        )}
-        <div className="space-y-2">
-          {filteredLocations.map(loc => (
-            <Card key={loc.id} className="border-0 card-interactive cursor-pointer" onClick={() => openDetails(loc)}>
-              <CardContent className="p-3.5 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/8 flex items-center justify-center flex-shrink-0">
-                  <MapPin className="w-5 h-5 text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-semibold text-[13px] truncate">{loc.name}</h4>
-                  <p className="text-[10px] text-muted-foreground truncate">{loc.description}</p>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <div className="text-right">
-                    <div className="flex items-center gap-0.5 justify-end">
-                      <Star className="w-3 h-3 text-accent fill-accent" />
-                      <span className="text-[11px] font-medium">{loc.rating}</span>
-                    </div>
-                    <p className="text-[9px] text-muted-foreground">{fmtDist(loc._dist)}</p>
-                  </div>
-                  <Button
-                    variant="ghost" size="icon" className="h-8 w-8 rounded-xl"
-                    onClick={(e) => { e.stopPropagation(); toggleFavorite(loc.id, loc.name); }}
-                  >
-                    <Heart className={`w-4 h-4 transition-colors ${favorites.includes(loc.id) ? "fill-destructive text-destructive" : ""}`} />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+      {isLoading && apiLocations.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mb-2" />
+          <p className="text-sm text-muted-foreground">Finding places...</p>
         </div>
-      </motion.div>
+      )}
+
+      {apiLocations.length > 0 && (
+        <div className={`space-y-4 transition-opacity duration-200 ${isFetching ? "opacity-60" : ""}`}>
+          {/* Experiences */}
+          {activeCategory === "all" && !searchQuery && (
+            <motion.div variants={item}>
+              <div className="flex items-center justify-between mb-2.5">
+                <h3 className="section-header flex items-center gap-1.5">
+                  <Star className="w-4 h-4 text-accent" /> Top Experiences
+                </h3>
+                <Badge variant="outline" className="text-[9px] h-5 font-semibold">
+                  <TrendingUp className="w-2.5 h-2.5 mr-0.5" /> Popular
+                </Badge>
+              </div>
+              <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4">
+                {experiences.map((exp, i) => (
+                  <Card key={i} className="border-0 card-interactive min-w-[200px] flex-shrink-0 cursor-pointer"
+                    onClick={() => openDetails(asPlace(exp.name, exp.desc, exp.rating, exp.lat, exp.lng, "poi"))}
+                  >
+                    <CardContent className="p-3.5">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-3xl">{exp.image}</span>
+                        <Badge className="text-[8px] h-[16px] bg-success/10 text-success font-semibold border-0">Bookable</Badge>
+                      </div>
+                      <h4 className="font-semibold text-[13px]">{exp.name}</h4>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{exp.desc}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <div className="flex items-center gap-0.5">
+                          <Star className="w-3 h-3 text-accent fill-accent" />
+                          <span className="text-[11px] font-semibold">{exp.rating}</span>
+                        </div>
+                        <Badge variant="outline" className="text-[9px] h-[16px] gap-0.5 font-medium">
+                          <Clock className="w-2 h-2" /> {exp.duration}
+                        </Badge>
+                      </div>
+                      <p className="text-xs font-bold text-primary mt-2">{exp.price}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Hotels — near you */}
+          {(activeCategory === "all" || activeCategory === "hotel") && !searchQuery && nearbyHotels.length > 0 && (
+            <motion.div variants={item}>
+              <div className="flex items-center justify-between mb-2.5">
+                <h3 className="section-header flex items-center gap-1.5">
+                  <Hotel className="w-4 h-4 text-primary" /> Hotels Near You
+                </h3>
+                <Badge variant="outline" className="text-[9px] h-5 font-semibold">Near you</Badge>
+              </div>
+              <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4">
+                {nearbyHotels.map(h => (
+                  <Card key={h.id} className="border-0 card-interactive min-w-[170px] flex-shrink-0 cursor-pointer" onClick={() => openDetails(h)}>
+                    <CardContent className="p-3.5">
+                      <div className="flex items-start justify-between">
+                        <span className="text-2xl">🏨</span>
+                        <Badge className="text-[8px] h-[16px] bg-accent/10 text-accent font-semibold">Hotel</Badge>
+                      </div>
+                      <h4 className="font-semibold text-[13px] mt-2 truncate">{h.name}</h4>
+                      <div className="flex items-center gap-1 mt-1">
+                        <Star className="w-3 h-3 text-accent fill-accent" />
+                        <span className="text-[11px] font-medium">{h.rating}</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1.5">{fmtDist(h._dist)} away</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Food — near you */}
+          {(activeCategory === "all" || activeCategory === "restaurant") && !searchQuery && nearbyFood.length > 0 && (
+            <motion.div variants={item}>
+              <div className="flex items-center justify-between mb-2.5">
+                <h3 className="section-header flex items-center gap-1.5">
+                  <UtensilsCrossed className="w-4 h-4 text-accent" /> Food & Dining Near You
+                </h3>
+                <Badge variant="outline" className="text-[9px] h-5 font-semibold">
+                  <TrendingUp className="w-2.5 h-2.5 mr-0.5" /> Trending
+                </Badge>
+              </div>
+              <div className="space-y-2">
+                {nearbyFood.map(f => (
+                  <Card key={f.id} className="border-0 card-interactive cursor-pointer" onClick={() => openDetails(f)}>
+                    <CardContent className="p-3.5 flex items-center gap-3">
+                      <span className="text-2xl">🍽️</span>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-[13px] truncate">{f.name}</h4>
+                        <p className="text-[10px] text-muted-foreground truncate">{f.description}</p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="flex items-center gap-0.5">
+                          <Star className="w-3 h-3 text-accent fill-accent" />
+                          <span className="text-[11px] font-bold">{f.rating}</span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">{fmtDist(f._dist)}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* All — sorted by GPS distance */}
+          <motion.div variants={item}>
+            <h3 className="section-header mb-2.5">
+              {activeCategory === "all" ? (searchQuery ? "Search Results" : "Places Near You") : categories.find(c => c.id === activeCategory)?.label}
+            </h3>
+            {filteredLocations.length === 0 && (
+              <div className="flex flex-col items-center py-12 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center mb-3">
+                  <Search className="w-6 h-6 text-muted-foreground" />
+                </div>
+                <p className="text-sm font-semibold text-muted-foreground">No results found</p>
+              </div>
+            )}
+            <div className="space-y-2">
+              {filteredLocations.map(loc => (
+                <Card key={loc.id} className="border-0 card-interactive cursor-pointer" onClick={() => openDetails(loc)}>
+                  <CardContent className="p-3.5 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/8 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      {loc.imageUrl ? (
+                        <img src={loc.imageUrl} alt={loc.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <MapPin className="w-5 h-5 text-primary" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-[13px] truncate">{loc.name}</h4>
+                      <p className="text-[10px] text-muted-foreground truncate">{loc.description || loc.type}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="text-right">
+                        <div className="flex items-center gap-0.5 justify-end">
+                          <Star className="w-3 h-3 text-accent fill-accent" />
+                          <span className="text-[11px] font-medium">{loc.rating || "N/A"}</span>
+                        </div>
+                        <p className="text-[9px] text-muted-foreground">{fmtDist(loc._dist)}</p>
+                      </div>
+                      <Button
+                        variant="ghost" size="icon" className="h-8 w-8 rounded-xl"
+                        onClick={(e) => { e.stopPropagation(); toggleFavorite(loc.id, loc.name); }}
+                      >
+                        <Heart className={`w-4 h-4 transition-colors ${favorites.includes(loc.id) ? "fill-destructive text-destructive" : ""}`} />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       <PlaceDetailsSheet
         place={selectedPlace}

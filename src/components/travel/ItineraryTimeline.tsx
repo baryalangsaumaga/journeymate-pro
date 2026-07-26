@@ -23,8 +23,18 @@ export function ItineraryTimeline({ stops, onToggle, onPick }: Props) {
       {stops.map((stop, idx) => {
         const TransitIcon = TRANSIT_ICONS[stop.transitType];
         const isNext = !stop.isCompleted && (idx === 0 || stops[idx - 1].isCompleted);
+        const showDayHeader = idx === 0 || stop.dayNumber !== stops[idx - 1].dayNumber;
         return (
-          <div key={stop.id} className="flex gap-3">
+          <div key={stop.id} className="space-y-2">
+            {showDayHeader && (
+              <div className="flex items-center gap-2 pt-2.5 pb-2.5 first:pt-0">
+                <span className="text-[10px] font-display font-bold text-primary tracking-wide uppercase bg-primary/10 px-2.5 py-1 rounded-lg">
+                  Day {stop.dayNumber}
+                </span>
+                <div className="h-[1px] bg-border flex-1" />
+              </div>
+            )}
+            <div className="flex gap-3">
             <div className="flex flex-col items-center">
               <button
                 onClick={() => onToggle?.(stop.id)}
@@ -38,7 +48,16 @@ export function ItineraryTimeline({ stops, onToggle, onPick }: Props) {
                 {stop.isCompleted ? <CheckCircle2 className="w-4 h-4" /> : isNext ? <Navigation className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
               </button>
               {idx < stops.length - 1 && (
-                <div className={`w-0.5 h-16 my-0.5 rounded-full ${stop.isCompleted ? "bg-success" : "bg-border"}`} />
+                <div className="flex flex-col items-center flex-1 my-0.5">
+                  <div className={`w-0.5 h-6 ${stop.isCompleted ? "bg-success" : "bg-border"}`} />
+                  {stops[idx + 1]?.distanceFromPrevious > 0 && (
+                    <div className="text-[9px] text-muted-foreground flex flex-col items-center gap-0.5 my-1 bg-background/80 px-1 py-0.5 rounded shadow-sm border border-border/40">
+                      <span>{Math.round(stops[idx + 1].distanceFromPrevious!)}km</span>
+                      <span>{Math.round(stops[idx + 1].driveTimeFromPrevious!)}m</span>
+                    </div>
+                  )}
+                  <div className={`w-0.5 min-h-6 flex-1 ${stop.isCompleted ? "bg-success" : "bg-border"}`} />
+                </div>
               )}
             </div>
             <Card
@@ -68,8 +87,9 @@ export function ItineraryTimeline({ stops, onToggle, onPick }: Props) {
               </CardContent>
             </Card>
           </div>
-        );
-      })}
+        </div>
+      );
+    })}
     </div>
   );
 }

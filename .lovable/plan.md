@@ -9,13 +9,13 @@ Make maps, trips, and navigation reliably usable offline, and enrich the Navigat
 
 ### Service worker (`public/sw.js`)
 - Precache the app shell + Leaflet CSS/JS + marker assets on install.
-- Add an explicit **tile cache** (`trailsync-tiles-v1`) with an LRU cap (~400 tiles) using stale-while-revalidate for `*.tile.openstreetmap.org`, `basemaps.cartocdn.com`, and the ArcGIS satellite host.
-- Cache OSRM responses in a `trailsync-osrm-v1` bucket (cache-first, 24h TTL) so a re-opened trip has its route even without a signal.
+- Add an explicit **tile cache** (`Intellitravel-tiles-v1`) with an LRU cap (~400 tiles) using stale-while-revalidate for `*.tile.openstreetmap.org`, `basemaps.cartocdn.com`, and the ArcGIS satellite host.
+- Cache OSRM responses in a `Intellitravel-osrm-v1` bucket (cache-first, 24h TTL) so a re-opened trip has its route even without a signal.
 - Cache Nominatim/Geoapify search responses (network-first, fallback to cache).
 - Bump `VERSION` and add old-cache cleanup.
 
 ### Trip + route persistence
-- Extend `src/lib/offlineRoute.ts` from single-slot to **keyed cache per trip id** (`trailsync:offlineRoute:v2:<tripId>`), with `listCachedTrips()`, `getCachedTrip(id)`, `clearAll()`.
+- Extend `src/lib/offlineRoute.ts` from single-slot to **keyed cache per trip id** (`Intellitravel:offlineRoute:v2:<tripId>`), with `listCachedTrips()`, `getCachedTrip(id)`, `clearAll()`.
 - On trip start (`NavigationPage.tsx` + `ItineraryPage.tsx`), save: route geometry, steps, all alternatives, nearby POIs, mode, destination, stop list.
 - New helper `src/lib/offlineTiles.ts`: given a route bbox + zoom range (13–16), pre-warm the tile cache by fetching tiles through `fetch()` so the SW stores them. Wire a **"Make available offline"** button on the itinerary card.
 
