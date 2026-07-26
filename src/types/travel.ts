@@ -14,6 +14,8 @@ export interface Location {
   lng: number;
   type: "city" | "poi" | "landmark" | "hotel" | "restaurant" | "gas-station" | "viewpoint";
   description?: string;
+  address?: string;
+
   rating?: number;
   imageUrl?: string;
   photo_references?: string[];
