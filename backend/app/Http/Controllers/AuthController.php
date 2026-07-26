@@ -75,32 +75,10 @@ class AuthController extends Controller
     }
     public function googleRedirect()
     {
-        // Detect if request came from LAN and use appropriate redirect URI.
-        // The LAN IP must be registered in Google Cloud Console under Authorized redirect URIs.
-        $requestOrigin = request()->getHost();
-        $isLAN = str_contains($requestOrigin, '192.168');
-        $isProduction = app()->environment('production');
-
-        if ($isProduction) {
-            $redirectUri = env('GOOGLE_REDIRECT_URI');
-        } else {
-            $redirectUri = $isLAN 
-                ? env('GOOGLE_REDIRECT_URI_LAN', 'http://192.168.1.11:8000/api/auth/google/callback')
-                : env('GOOGLE_REDIRECT_URI', 'http://localhost:8000/api/auth/google/callback');
-        }
-
+        $redirectUri = env('GOOGLE_REDIRECT_URI', 'http://localhost:8000/api/auth/google/callback');
         config(['services.google.redirect' => $redirectUri]);
-
-        // Google requires device_id and device_name for private IP redirect URIs
-        $params = [];
-        if ($isLAN) {
-            $params = [
-                'device_id' => 'intellitravel-web-' . md5($requestOrigin),
-                'device_name' => 'IntelliTravel Web App',
-            ];
-        }
-
-        return Socialite::driver('google')->stateless()->with($params)->redirect();
+        
+        return Socialite::driver('google')->stateless()->redirect();
     }
 
     public function googleCallback()
@@ -122,32 +100,12 @@ class AuthController extends Controller
             $token = $user->createToken('auth_token')->plainTextToken;
             $user->setAttribute('stats', $user->calculateStats());
 
-            $requestOrigin = request()->getHost();
-            $isLAN = str_contains($requestOrigin, '192.168');
-            $isProduction = app()->environment('production');
-
-            if ($isProduction) {
-                $frontendUrl = env('FRONTEND_URL');
-            } else {
-                $frontendUrl = $isLAN 
-                    ? env('FRONTEND_LAN_URL', 'http://192.168.1.11:8080')
-                    : env('FRONTEND_URL', 'http://localhost:8080');
-            }
+            $frontendUrl = env('FRONTEND_URL', 'http://localhost:8080');
 
             return redirect("{$frontendUrl}/auth/callback?token={$token}");
 
         } catch (\Exception $e) {
-            $requestOrigin = request()->getHost();
-            $isLAN = str_contains($requestOrigin, '192.168');
-            $isProduction = app()->environment('production');
-
-            if ($isProduction) {
-                $frontendUrl = env('FRONTEND_URL');
-            } else {
-                $frontendUrl = $isLAN 
-                    ? env('FRONTEND_LAN_URL', 'http://192.168.1.11:8080')
-                    : env('FRONTEND_URL', 'http://localhost:8080');
-            }
+            $frontendUrl = env('FRONTEND_URL', 'http://localhost:8080');
 
             return redirect("{$frontendUrl}/login?error=Google login failed");
         }
