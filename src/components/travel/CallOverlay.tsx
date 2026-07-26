@@ -50,11 +50,12 @@ export function VideoCallOverlay({
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[1000] bg-zinc-950/95 backdrop-blur-md flex flex-col md:items-center md:justify-center"
+      className="fixed inset-0 z-[1000] bg-zinc-950/80 backdrop-blur-md flex flex-col md:items-center md:justify-center md:p-8"
     >
-      <div className="w-full h-full md:w-[400px] md:h-[750px] md:max-h-[90vh] md:rounded-[2.5rem] overflow-hidden bg-zinc-950 flex flex-col md:shadow-2xl md:ring-1 md:ring-white/10 relative">
-        <div className="flex-1 relative">
+      <div className="w-full h-full md:w-auto md:h-auto md:max-w-[900px] md:max-h-[85vh] md:aspect-video md:rounded-3xl overflow-hidden bg-zinc-950 flex flex-col md:shadow-2xl md:ring-1 md:ring-white/10 relative">
+        <div className="flex-1 relative min-h-0">
         <video ref={remoteRef} autoPlay playsInline className="w-full h-full object-cover bg-zinc-900" />
+
         {(!call.remoteStream || call.callStatus !== "active") && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-zinc-900/80">
             <img src={remoteAvatar} alt={remoteName} className="w-24 h-24 rounded-2xl ring-4 ring-white/10" />
@@ -77,11 +78,12 @@ export function VideoCallOverlay({
 
         {call.localStream && (
           <video ref={localRef} autoPlay playsInline muted
-            className="absolute bottom-32 right-4 w-28 h-40 rounded-2xl object-cover ring-2 ring-white/20 bg-black" />
+            className="absolute bottom-32 right-4 w-28 h-40 md:bottom-4 md:w-40 md:h-28 rounded-2xl object-cover ring-2 ring-white/20 bg-black" />
         )}
       </div>
 
-      <div className="px-6 py-6 bg-zinc-950 flex items-center justify-center gap-3">
+      <div className="px-6 py-6 md:py-4 bg-zinc-950 flex items-center justify-center gap-3">
+
         {call.callStatus === "ringing" ? (
           <>
             <Button size="icon" variant="destructive" className="h-14 w-14 rounded-full" onClick={call.rejectIncomingCall}>
@@ -150,11 +152,12 @@ export function VoiceCallOverlay({
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[1000] bg-zinc-950/95 backdrop-blur-md flex flex-col md:items-center md:justify-center"
+      className="fixed inset-0 z-[1000] bg-zinc-950/80 backdrop-blur-md flex flex-col md:items-center md:justify-center md:p-8"
     >
-      <div className="w-full h-full md:w-[400px] md:h-[750px] md:max-h-[90vh] md:rounded-[2.5rem] overflow-hidden flex flex-col items-center justify-between py-12 md:shadow-2xl md:ring-1 md:ring-white/10 relative bg-gradient-to-b from-primary/90 via-primary to-primary/80 text-primary-foreground">
+      <div className="w-full h-full md:w-[380px] md:h-auto md:max-h-[85vh] md:rounded-3xl overflow-hidden flex flex-col items-center justify-between py-12 md:py-10 md:shadow-2xl md:ring-1 md:ring-white/10 relative bg-gradient-to-b from-primary/90 via-primary to-primary/80 text-primary-foreground">
       <audio ref={remoteAudioRef} autoPlay />
-      <div className="flex flex-col items-center gap-4 mt-12">
+
+      <div className="flex flex-col items-center gap-4 mt-12 md:mt-2">
         <p className="text-sm uppercase tracking-widest text-primary-foreground/70 font-medium">
           {call.callStatus === "calling" ? "Calling" :
            call.callStatus === "ringing" ? "Incoming call" :
