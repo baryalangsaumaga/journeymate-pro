@@ -16,6 +16,8 @@ export interface Location {
   description?: string;
   rating?: number;
   imageUrl?: string;
+  photo_references?: string[];
+  reviews_data?: any[];
 }
 
 export interface ItineraryStop {
@@ -28,6 +30,9 @@ export interface ItineraryStop {
   weather?: WeatherCondition;
   temperature?: number;
   isCompleted: boolean;
+  distanceFromPrevious?: number;
+  driveTimeFromPrevious?: number;
+  dayNumber?: number;
 }
 
 export interface Expense {
@@ -62,6 +67,8 @@ export interface Trip {
   description: string;
   startDate: string;
   endDate: string;
+  destination?: string;
+  transitType?: TransitType;
   status: TripStatus;
   coverImage: string;
   stops: ItineraryStop[];
@@ -69,6 +76,11 @@ export interface Trip {
   isOfflineAvailable: boolean;
   expenses?: Expense[];
   budget?: TripBudget;
+  total_distance?: number;
+  total_duration?: number;
+  centerLat?: number;
+  centerLng?: number;
+  owner?: TravelUser;
 }
 
 export interface TravelUser {

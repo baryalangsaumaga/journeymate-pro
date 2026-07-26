@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   MapPin, Plus, Download, Share2, CalendarDays,
   Users, ChevronLeft, Edit3, Copy, Trash2,
-  AlertCircle, Navigation, ListChecks, Route as RouteIcon, Sparkles, Play,
+  AlertCircle, Navigation, ListChecks, Route as RouteIcon, Sparkles, Play, Loader2
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,8 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
-import { mockTrips } from "@/data/mockData";
-import type { Trip, Location, ItineraryStop } from "@/types/travel";
+import type { Trip, Location, ItineraryStop, TravelUser } from "@/types/travel";
 import { generatePDF, downloadJSON } from "@/lib/pdf";
 import { repo } from "@/lib/storage";
 import { fetchRoutePlan } from "@/lib/routing";
@@ -29,6 +29,21 @@ import { PlaceSearchInput } from "@/components/travel/PlaceSearchInput";
 import { PlaceDetailsSheet } from "@/components/travel/PlaceDetailsSheet";
 import { tripSession, appNavigate } from "@/lib/tripSession";
 import { useGeolocation } from "@/hooks/useGeolocation";
+import { useTrip } from "@/hooks/useTrip";
+import { useBudget } from "@/hooks/useBudget";
+import { useAuth } from "@/auth/AuthProvider";
+import { itinerariesApi, userSearchApi, tripsApi } from "@/lib/api";
+
+function formatDate(dateStr?: string): string {
+  if (!dateStr) return "";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return dateStr;
+  }
+}
 
 const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
@@ -36,8 +51,11 @@ const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } 
 type DetailTab = "timeline" | "plan" | "auto";
 
 export default function ItineraryPage() {
-  const [trips, setTrips] = useState<Trip[]>(mockTrips);
-  const [selectedTrip, setSelectedTrip] = useState<Trip>(trips[0]);
+  const queryClient = useQueryClient();
+  const { trips, active, setActiveId, remove, upsert, isLoading } = useTrip();
+  const { user } = useAuth();
+  const { budget } = useBudget(active?.id || "");
+
   const [view, setView] = useState<"list" | "detail">("list");
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "planning" | "completed">("all");
   const [newTripOpen, setNewTripOpen] = useState(false);
@@ -52,101 +70,123 @@ export default function ItineraryPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const { fix } = useGeolocation();
 
-  const completedStops = selectedTrip.stops.filter(s => s.isCompleted).length;
-  const progress = (completedStops / selectedTrip.stops.length) * 100;
+  // If in list view, selectedTrip is active. If we want we can have a local state, 
+  // but using active directly is better so we leverage useQuery caching.
+  const selectedTrip = active;
 
-  const filteredTrips = trips.filter(t => activeFilter === "all" || t.status === activeFilter);
+  const tripTravelers = useMemo(() => {
+    if (!selectedTrip) return [];
+    const list: TravelUser[] = [];
+    if (selectedTrip.owner) {
+      list.push(selectedTrip.owner);
+    }
+    if (selectedTrip.collaborators) {
+      list.push(...selectedTrip.collaborators);
+    }
+    return list;
+  }, [selectedTrip]);
 
+  const completedStops = selectedTrip?.stops?.filter(s => s.isCompleted).length || 0;
+  const progress = selectedTrip?.stops?.length ? (completedStops / selectedTrip.stops.length) * 100 : 0;
 
-  const handleDeleteTrip = () => {
-    setTrips(prev => prev.filter(t => t.id !== selectedTrip.id));
-    toast({ title: "🗑️ Trip Deleted", description: `"${selectedTrip.title}" has been removed.`, variant: "destructive" });
-    setDeleteOpen(false);
-    setView("list");
-    if (trips.length > 1) setSelectedTrip(trips.find(t => t.id !== selectedTrip.id)!);
+  const filteredTrips = useMemo(() => {
+    return trips.filter(t => activeFilter === "all" || t.status === activeFilter);
+  }, [trips, activeFilter]);
+
+  const handleDeleteTrip = async () => {
+    if (!selectedTrip) return;
+    try {
+      await remove(selectedTrip.id);
+      toast({ title: "🗑️ Trip Deleted", description: `"${selectedTrip.title}" has been removed.`, variant: "destructive" });
+      setDeleteOpen(false);
+      setView("list");
+      const nextActive = trips.find(t => t.id !== selectedTrip.id);
+      if (nextActive) setActiveId(nextActive.id);
+    } catch (e) {
+      toast({ title: "Failed to delete trip", variant: "destructive" });
+    }
   };
 
   const handleDuplicate = () => {
-    toast({ title: "📋 Trip Duplicated!", description: `A copy of "${selectedTrip.title}" has been created.` });
+    toast({ title: "📋 Trip Duplicated!", description: `A copy of "${selectedTrip?.title}" has been created.` });
   };
 
   const handleShare = () => {
+    if (!selectedTrip) return;
     if (navigator.share) {
-      navigator.share({ title: selectedTrip.title, text: selectedTrip.description }).catch(() => {});
+      navigator.share({ title: selectedTrip.title, text: selectedTrip.description }).catch(() => { });
     } else {
       navigator.clipboard.writeText(`Check out my trip: ${selectedTrip.title}`);
       toast({ title: "🔗 Link Copied!", description: "Trip link copied to clipboard." });
     }
   };
 
-  const buildItineraryPDF = () => generatePDF({
-    title: selectedTrip.title,
-    subtitle: `${selectedTrip.startDate} → ${selectedTrip.endDate} · ${selectedTrip.stops.length} stops`,
-    sections: [
-      {
-        title: "Overview",
-        rows: [
-          ["Status", selectedTrip.status],
-          ["Description", selectedTrip.description || "—"],
-          ["Collaborators", selectedTrip.collaborators.map(c => c.name).join(", ") || "Solo"],
-        ],
-      },
-      {
-        title: "Route Summary",
-        rows: [
-          ["Total stops", String(selectedTrip.stops.length)],
-          ["Transit modes", Array.from(new Set(selectedTrip.stops.map(s => s.transitType))).join(", ") || "—"],
-          ["First stop", selectedTrip.stops[0]?.location.name ?? "—"],
-          ["Final stop", selectedTrip.stops[selectedTrip.stops.length - 1]?.location.name ?? "—"],
-        ],
-      },
-      {
-        title: "Itinerary",
-        rows: selectedTrip.stops.map((s, i) => [
-          `Stop ${i + 1} · ${s.transitType}`,
-          `${s.location.name} — ${s.arrivalTime} → ${s.departureTime}${s.notes ? ` · ${s.notes}` : ""}`,
-        ]),
-      },
-    ],
-    footer: `TrailSync · ${selectedTrip.title}`,
-  });
-
-  // One-tap: just save the printable itinerary PDF.
-  const handleExportPDF = () => {
-    const doc = buildItineraryPDF();
-    doc.save(`${selectedTrip.title.replace(/\s+/g, "_")}_itinerary.pdf`);
-    toast({ title: "📄 Itinerary Exported", description: "PDF ready to print or share." });
+  const buildItineraryPDF = () => {
+    if (!selectedTrip) return null;
+    return generatePDF({
+      title: selectedTrip.title,
+      subtitle: `${formatDate(selectedTrip.startDate)} → ${formatDate(selectedTrip.endDate)} · ${selectedTrip.stops?.length || 0} stops`,
+      sections: [
+        {
+          title: "Overview",
+          rows: [
+            ["Status", selectedTrip.status],
+            ["Description", selectedTrip.description || "—"],
+            ["Collaborators", selectedTrip.collaborators?.map(c => c.name).join(", ") || "Solo"],
+          ],
+        },
+        {
+          title: "Route Summary",
+          rows: [
+            ["Total stops", String(selectedTrip.stops?.length || 0)],
+            ["Transit modes", Array.from(new Set(selectedTrip.stops?.map(s => s.transitType) || [])).join(", ") || "—"],
+            ["First stop", selectedTrip.stops?.[0]?.location.name ?? "—"],
+            ["Final stop", selectedTrip.stops?.[(selectedTrip.stops?.length || 1) - 1]?.location.name ?? "—"],
+          ],
+        },
+        {
+          title: "Itinerary",
+          rows: selectedTrip.stops?.map((s, i) => [
+            `Stop ${i + 1} · ${s.transitType}`,
+            `${s.location.name} — ${s.arrivalTime} → ${s.departureTime}${s.notes ? ` · ${s.notes}` : ""}`,
+          ]) || [],
+        },
+      ],
+      footer: `Intellitravel · ${selectedTrip.title}`,
+    });
   };
 
-  // Full "save offline" — PDF + JSON + cache locations for offline reuse.
-  const handleDownload = () => {
+  const handleExportPDF = () => {
     const doc = buildItineraryPDF();
-    doc.save(`${selectedTrip.title.replace(/\s+/g, "_")}_itinerary.pdf`);
+    if (doc && selectedTrip) {
+      doc.save(`${selectedTrip.title.replace(/\s+/g, "_")}_itinerary.pdf`);
+      toast({ title: "📄 Itinerary Exported", description: "PDF ready to print or share." });
+    }
+  };
+
+  const handleDownload = () => {
+    if (!selectedTrip) return;
+    const doc = buildItineraryPDF();
+    if (doc) doc.save(`${selectedTrip.title.replace(/\s+/g, "_")}_itinerary.pdf`);
 
     repo.offlineTrips.add(selectedTrip.id);
     repo.cms.locations.save([
       ...repo.cms.locations.list(),
-      ...selectedTrip.stops.map(s => ({
+      ...(selectedTrip.stops?.map(s => ({
         id: `${selectedTrip.id}:${s.id}`,
         name: s.location.name,
         type: s.location.type,
         lat: s.location.lat,
         lng: s.location.lng,
         description: s.notes,
-      })),
+      })) || []),
     ]);
     downloadJSON(`${selectedTrip.title.replace(/\s+/g, "_")}_offline.json`, selectedTrip);
-
-    setTrips(prev => prev.map(t => t.id === selectedTrip.id ? { ...t, isOfflineAvailable: true } : t));
-    setSelectedTrip(prev => ({ ...prev, isOfflineAvailable: true }));
-
     toast({ title: "📥 Saved Offline", description: "PDF downloaded · trip cached for offline use." });
   };
 
-  // Full "make available offline": fetches each leg's route + primes the map tile
-  // cache for the trip's bounding box so navigation still works without a signal.
   const handleMakeOffline = async () => {
-    if (selectedTrip.stops.length === 0) {
+    if (!selectedTrip || !selectedTrip.stops || selectedTrip.stops.length === 0) {
       toast({ title: "Add at least one stop first" });
       return;
     }
@@ -166,14 +206,12 @@ export default function ItineraryPage() {
           nearby, mode: "car", tripTitle: `${selectedTrip.title} · ${b.name}`,
         });
       }
-      // Also cache the trip's stops as points.
       if (allCoords.length === 0) {
         allCoords.push(...selectedTrip.stops.map(s => [s.location.lat, s.location.lng] as [number, number]));
       }
       const { requested, ok } = await prewarmRouteTiles(allCoords, { minZoom: 13, maxZoom: 16, maxTiles: 300 });
       repo.offlineTrips.add(selectedTrip.id);
-      setTrips(prev => prev.map(t => t.id === selectedTrip.id ? { ...t, isOfflineAvailable: true } : t));
-      setSelectedTrip(prev => ({ ...prev, isOfflineAvailable: true }));
+      queryClient.invalidateQueries({ queryKey: ["trips"] });
       toast({
         title: "✅ Trip available offline",
         description: `Cached ${ok}/${requested} map tiles + ${selectedTrip.stops.length - 1} routes`,
@@ -183,24 +221,31 @@ export default function ItineraryPage() {
     }
   };
 
-  const handleInvite = () => {
-    if (!inviteEmail.trim()) return;
-    toast({ title: "📧 Invite Sent!", description: `Invitation sent to ${inviteEmail}.` });
-    setInviteEmail("");
-    setInviteOpen(false);
+  const handleInvite = async () => {
+    if (!inviteEmail.trim() || !selectedTrip) return;
+    try {
+      await tripsApi.invite(selectedTrip.id, { username: inviteEmail.trim() });
+      toast({ title: "📧 Invite Sent!", description: `Invitation sent to ${inviteEmail}.` });
+      setInviteEmail("");
+      setInviteOpen(false);
+    } catch (e: any) {
+      toast({ title: "Invite failed", description: e.response?.data?.message || "Could not find user", variant: "destructive" });
+    }
   };
 
-  const handleEditTrip = () => {
-    toast({ title: "✏️ Trip Updated!", description: "Changes saved successfully." });
-    setEditOpen(false);
+  const handleEditTrip = async () => {
+    if (!selectedTrip) return;
+    try {
+      await upsert({ ...selectedTrip, title: editTitle, description: editDesc });
+      toast({ title: "✏️ Trip Updated!", description: "Changes saved successfully." });
+      setEditOpen(false);
+    } catch (e) {
+      toast({ title: "Failed to update trip", variant: "destructive" });
+    }
   };
 
-  const handleToggleStop = (stopId: string) => {
-    setSelectedTrip(prev => ({
-      ...prev,
-      stops: prev.stops.map(s => s.id === stopId ? { ...s, isCompleted: !s.isCompleted } : s)
-    }));
-    toast({ title: "✅ Stop Updated" });
+  const handleToggleStop = async (stopId: string) => {
+    toast({ title: "Toggle not fully hooked to backend yet" });
   };
 
   const handlePickStop = (stop: ItineraryStop) => {
@@ -208,23 +253,44 @@ export default function ItineraryPage() {
     setDetailOpen(true);
   };
 
-  const handleAddStop = (place: Location) => {
-    const newStop: ItineraryStop = {
-      id: `s-${Date.now()}`,
-      location: place,
-      arrivalTime: "—:—",
-      departureTime: "—:—",
-      notes: "Added from search",
-      transitType: "car",
-      isCompleted: false,
-    };
-    setSelectedTrip(prev => ({ ...prev, stops: [...prev.stops, newStop] }));
-    toast({ title: "📍 Stop Added", description: place.name });
+  const handleAddStop = async (place: Location) => {
+    if (!selectedTrip) return;
+    try {
+      await itinerariesApi.create({
+        trip_id: selectedTrip.id,
+        place_id: place.id,
+        place_name: place.name,
+        place_address: (place as any).address || place.description || place.name,
+        lat: place.lat,
+        lng: place.lng,
+        day_number: 1,
+        order: (selectedTrip.stops?.length || 0) + 1,
+        notes: "Added from search",
+        category: place.type || "",
+      });
+
+      const centerLat = fix?.lat ?? selectedTrip.stops?.[0]?.location.lat ?? place.lat;
+      const centerLng = fix?.lng ?? selectedTrip.stops?.[0]?.location.lng ?? place.lng;
+
+      try {
+        await itinerariesApi.rearrange(selectedTrip.id, centerLat, centerLng);
+        await itinerariesApi.calculateRoute(selectedTrip.id);
+      } catch (err) {
+        console.warn("Could not optimize route automatically", err);
+      }
+
+      // A quick reload workaround (useQuery invalidation would be better placed inside useTrip addStopMutation)
+      window.location.reload();
+      toast({ title: "📍 Stop Added", description: place.name });
+    } catch (e) {
+      toast({ title: "Failed to add stop", variant: "destructive" });
+    }
   };
 
   const handleStartTrip = (stops?: ItineraryStop[]) => {
+    if (!selectedTrip) return;
     const useStops = stops ?? selectedTrip.stops;
-    if (useStops.length === 0) {
+    if (!useStops || useStops.length === 0) {
       toast({ title: "Add at least one stop first" });
       return;
     }
@@ -238,6 +304,15 @@ export default function ItineraryPage() {
     appNavigate("navigate");
     toast({ title: "🚀 Trip Started", description: "Your tour guide is plotting the route…" });
   };
+
+  if (isLoading && trips.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24">
+        <Loader2 className="w-8 h-8 animate-spin text-primary mb-2" />
+        <p className="text-sm text-muted-foreground">Loading trips...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 py-4 pb-6 space-y-4">
@@ -267,9 +342,8 @@ export default function ItineraryPage() {
                 <button
                   key={f}
                   onClick={() => setActiveFilter(f)}
-                  className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold capitalize transition-all tap-highlight ${
-                    activeFilter === f ? "bg-primary text-primary-foreground shadow-travel" : "bg-muted text-muted-foreground"
-                  }`}
+                  className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold capitalize transition-all tap-highlight ${activeFilter === f ? "bg-primary text-primary-foreground shadow-travel" : "bg-muted text-muted-foreground"
+                    }`}
                 >
                   {f}
                 </button>
@@ -290,13 +364,14 @@ export default function ItineraryPage() {
             )}
 
             {filteredTrips.map(trip => {
-              const done = trip.stops.filter(s => s.isCompleted).length;
-              const pct = (done / trip.stops.length) * 100;
+              // Note: active.stops might be empty on the list page because we only load stops for the active trip.
+              const done = trip.stops?.filter(s => s.isCompleted).length || 0;
+              const pct = trip.stops?.length ? (done / trip.stops.length) * 100 : 0;
               return (
                 <motion.div key={trip.id} variants={item}>
                   <Card
                     className="border-0 card-interactive overflow-hidden cursor-pointer"
-                    onClick={() => { setSelectedTrip(trip); setView("detail"); }}
+                    onClick={() => { setActiveId(trip.id); setView("detail"); }}
                   >
                     <div className="h-32 relative overflow-hidden">
                       <img src={trip.coverImage} alt={trip.title} className="w-full h-full object-cover" />
@@ -304,10 +379,9 @@ export default function ItineraryPage() {
                       <div className="absolute bottom-3 left-3.5 right-3.5">
                         <h3 className="font-display font-bold text-[15px] text-white leading-tight">{trip.title}</h3>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[10px] text-white/70">{trip.startDate}</span>
-                          <Badge className={`text-[9px] h-[18px] font-semibold ${
-                            trip.status === "active" ? "bg-success/90" : "bg-white/20 text-white backdrop-blur-sm"
-                          }`}>
+                          <span className="text-[10px] text-white/70">{formatDate(trip.startDate)}</span>
+                          <Badge className={`text-[9px] h-[18px] font-semibold ${trip.status === "active" ? "bg-success/90" : "bg-white/20 text-white backdrop-blur-sm"
+                            }`}>
                             {trip.status}
                           </Badge>
                         </div>
@@ -322,13 +396,16 @@ export default function ItineraryPage() {
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <div className="flex -space-x-1.5">
-                            {trip.collaborators.slice(0, 3).map((u, i) => (
+                            {trip.owner && (
+                              <img src={trip.owner.avatar} className="w-6 h-6 rounded-lg border-2 border-card" />
+                            )}
+                            {trip.collaborators?.slice(0, 2).map((u, i) => (
                               <img key={i} src={u.avatar} className="w-6 h-6 rounded-lg border-2 border-card" />
                             ))}
                           </div>
-                          <span className="text-[10px] text-muted-foreground font-medium">{trip.collaborators.length} travelers</span>
+                          <span className="text-[10px] text-muted-foreground font-medium">{((trip.collaborators?.length || 0) + (trip.owner ? 1 : 0))} travelers</span>
                         </div>
-                        <span className="text-[10px] text-muted-foreground font-medium">{trip.stops.length} stops</span>
+                        <span className="text-[10px] text-muted-foreground font-medium">{trip.stops?.length || 0} stops</span>
                       </div>
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                         <motion.div
@@ -338,14 +415,14 @@ export default function ItineraryPage() {
                           transition={{ delay: 0.3, duration: 0.6 }}
                         />
                       </div>
-                      <p className="text-[10px] text-muted-foreground mt-1.5 font-medium">{done}/{trip.stops.length} completed</p>
+                      <p className="text-[10px] text-muted-foreground mt-1.5 font-medium">{done}/{trip.stops?.length || 0} completed</p>
                     </CardContent>
                   </Card>
                 </motion.div>
               );
             })}
           </motion.div>
-        ) : (
+        ) : selectedTrip && (
           <motion.div
             key="detail"
             variants={container}
@@ -368,7 +445,7 @@ export default function ItineraryPage() {
                     <ChevronLeft className="w-5 h-5" />
                   </Button>
                   <div className="absolute top-3 right-3 flex gap-1">
-                    <Button variant="ghost" size="icon" className="text-white bg-black/20 backdrop-blur-sm h-8 w-8 rounded-xl" onClick={() => { setEditTitle(selectedTrip.title); setEditDesc(selectedTrip.description); setEditOpen(true); }}>
+                    <Button variant="ghost" size="icon" className="text-white bg-black/20 backdrop-blur-sm h-8 w-8 rounded-xl" onClick={() => { setEditTitle(selectedTrip.title); setEditDesc(selectedTrip.description || ""); setEditOpen(true); }}>
                       <Edit3 className="w-3.5 h-3.5" />
                     </Button>
                     <Button variant="ghost" size="icon" className="text-white bg-black/20 backdrop-blur-sm h-8 w-8 rounded-xl" onClick={handleShare}>
@@ -385,11 +462,11 @@ export default function ItineraryPage() {
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-1.5 text-xs font-medium">
                         <CalendarDays className="w-3.5 h-3.5 text-muted-foreground" />
-                        {selectedTrip.startDate}
+                        {formatDate(selectedTrip.startDate)}
                       </div>
                       <div className="flex items-center gap-1.5 text-xs font-medium">
                         <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
-                        {selectedTrip.stops.length} stops
+                        {selectedTrip.stops?.length || 0} stops
                       </div>
                     </div>
                     <div className="flex gap-1">
@@ -426,22 +503,34 @@ export default function ItineraryPage() {
             {/* Trip Stats */}
             <motion.div variants={item} className="grid grid-cols-3 gap-2">
               {[
-                { label: "Budget", value: "₱30k", subtext: "₱20.9k spent" },
-                { label: "Distance", value: "64km", subtext: "4 modes" },
-                { label: "Duration", value: "4 days", subtext: "2 remaining" },
+                {
+                  label: "Budget",
+                  value: budget ? `${budget.currency === "PHP" ? "₱" : "$"}${(budget.total_budget / 1000).toFixed(1)}k` : "₱0k",
+                  subtext: budget ? `${budget.currency === "PHP" ? "₱" : "$"}${((budget.categories?.reduce((sum, c) => sum + c.spent, 0) || 0) / 1000).toFixed(1)}k spent` : "No budget set"
+                },
+                {
+                  label: "Distance",
+                  value: `${Math.round(selectedTrip.stops?.reduce((acc, stop) => acc + (stop.distanceFromPrevious || 0), 0) || 0)}km`,
+                  subtext: `${Array.from(new Set(selectedTrip.stops?.map(s => s.transitType) || [])).length} modes`
+                },
+                {
+                  label: "Duration",
+                  value: `${selectedTrip.startDate && selectedTrip.endDate ? Math.max(1, Math.ceil((new Date(selectedTrip.endDate).getTime() - new Date(selectedTrip.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1) : 1} days`,
+                  subtext: `${selectedTrip.stops?.filter(s => !s.isCompleted).length || 0} stops rem.`
+                },
               ].map(stat => (
                 <Card key={stat.label} className="border-0 card-interactive">
                   <CardContent className="p-3 text-center">
-                    <p className="font-display font-bold text-sm">{stat.value}</p>
+                    <p className="font-display font-bold text-sm truncate">{stat.value}</p>
                     <p className="text-[9px] text-muted-foreground font-medium mt-0.5">{stat.label}</p>
-                    <p className="text-[8px] text-primary font-semibold mt-1">{stat.subtext}</p>
+                    <p className="text-[8px] text-primary font-semibold mt-1 truncate">{stat.subtext}</p>
                   </CardContent>
                 </Card>
               ))}
             </motion.div>
 
             {/* Weather at first stop */}
-            {selectedTrip.stops[0] && (
+            {selectedTrip.stops?.[0] && (
               <motion.div variants={item}>
                 <WeatherWidget
                   lat={selectedTrip.stops[0].location.lat}
@@ -461,9 +550,8 @@ export default function ItineraryPage() {
                 <button
                   key={id}
                   onClick={() => setDetailTab(id)}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-semibold transition-all ${
-                    detailTab === id ? "bg-card text-primary shadow-sm" : "text-muted-foreground"
-                  }`}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-semibold transition-all ${detailTab === id ? "bg-card text-primary shadow-sm" : "text-muted-foreground"
+                    }`}
                 >
                   <Icon className="w-3.5 h-3.5" /> {label}
                 </button>
@@ -474,24 +562,26 @@ export default function ItineraryPage() {
               <AnimatePresence mode="wait">
                 {detailTab === "timeline" && (
                   <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                    <ItineraryTimeline stops={selectedTrip.stops} onToggle={handleToggleStop} onPick={handlePickStop} />
+                    <ItineraryTimeline stops={selectedTrip.stops || []} onToggle={handleToggleStop} onPick={handlePickStop} />
                   </motion.div>
                 )}
                 {detailTab === "plan" && (
                   <motion.div key="plan" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <RoutePlannerPanel
-                      initial={selectedTrip.stops.map(s => ({
+                      initial={selectedTrip.stops?.map(s => ({
                         id: s.id, location: s.location, transitType: s.transitType, notes: s.notes,
-                      }))}
+                      })) || []}
                     />
                   </motion.div>
                 )}
                 {detailTab === "auto" && (
                   <motion.div key="auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <AutoItineraryPanel
-                      centerLat={fix?.lat ?? selectedTrip.stops[0]?.location.lat}
-                      centerLng={fix?.lng ?? selectedTrip.stops[0]?.location.lng}
+                      trip={selectedTrip}
+                      centerLat={fix?.lat ?? selectedTrip.stops?.[0]?.location.lat ?? selectedTrip.centerLat}
+                      centerLng={fix?.lng ?? selectedTrip.stops?.[0]?.location.lng ?? selectedTrip.centerLng}
                       onUseAsTrip={(stops) => handleStartTrip(stops)}
+                      onPlanComplete={() => setDetailTab("timeline")}
                     />
                   </motion.div>
                 )}
@@ -503,7 +593,7 @@ export default function ItineraryPage() {
               <motion.div variants={item} className="space-y-2">
                 <PlaceSearchInput
                   placeholder="Add a stop…"
-                  exclude={selectedTrip.stops.map(s => s.location.id)}
+                  exclude={selectedTrip.stops?.map(s => s.location.id) || []}
                   onPick={handleAddStop}
                 />
               </motion.div>
@@ -541,7 +631,7 @@ export default function ItineraryPage() {
                     </Button>
                   </div>
                   <div className="space-y-2.5">
-                    {selectedTrip.collaborators.map(u => (
+                    {tripTravelers.map(u => (
                       <div key={u.id} className="flex items-center gap-2.5">
                         <div className="relative">
                           <img src={u.avatar} className="w-9 h-9 rounded-xl" />
@@ -556,6 +646,9 @@ export default function ItineraryPage() {
                         </Badge>
                       </div>
                     ))}
+                    {tripTravelers.length === 0 && (
+                      <p className="text-[11px] text-muted-foreground italic">You're traveling solo</p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -593,9 +686,14 @@ export default function ItineraryPage() {
           </DialogHeader>
           <TripWizard
             onCancel={() => setNewTripOpen(false)}
-            onComplete={(t) => {
-              toast({ title: "✈️ Trip Created!", description: `"${t.title}" added with ${t.destinations.length} stops.` });
-              setNewTripOpen(false);
+            onComplete={async (t) => {
+              try {
+                await upsert(t as any);
+                toast({ title: "✈️ Trip Created!", description: `"${t.title}" added with ${t.destinations.length} stops.` });
+                setNewTripOpen(false);
+              } catch (e) {
+                toast({ title: "Failed to save trip", variant: "destructive" });
+              }
             }}
           />
         </DialogContent>
@@ -609,8 +707,8 @@ export default function ItineraryPage() {
             <DialogDescription>Send an invite to join this trip</DialogDescription>
           </DialogHeader>
           <div className="py-2">
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Email Address</label>
-            <Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="friend@email.com" className="mt-1.5 h-10 rounded-xl border-border" type="email" />
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Email/Username</label>
+            <Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="friend@email.com" className="mt-1.5 h-10 rounded-xl border-border" />
           </div>
           <Button className="w-full h-10 rounded-xl shadow-travel font-semibold" onClick={handleInvite} disabled={!inviteEmail.trim()}>
             Send Invite
@@ -646,7 +744,7 @@ export default function ItineraryPage() {
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display">Delete Trip?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete "{selectedTrip.title}" and all its data. This action cannot be undone.
+              This will permanently delete "{selectedTrip?.title}" and all its data. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

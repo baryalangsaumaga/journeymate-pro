@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   DollarSign, TrendingUp, TrendingDown, Users, PieChart, ArrowRightLeft,
@@ -13,8 +13,13 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
-import { mockTrips, mockExpenses, mockBudget, currencyRates, currentUser, collaborators } from "@/data/mockData";
+import { currencyRates, currentUser, collaborators } from "@/data/mockData";
 import type { ExpenseCategory, Currency } from "@/types/travel";
+import { useTrip } from "@/hooks/useTrip";
+import { useAuth } from "@/auth/AuthProvider";
+import { useExpenses } from "@/hooks/useExpenses";
+import { useBudget } from "@/hooks/useBudget";
+import { currencyApi } from "@/lib/api";
 
 const categoryConfig: Record<ExpenseCategory, { icon: typeof Utensils; label: string; color: string }> = {
   food: { icon: Utensils, label: "Food & Dining", color: "text-accent" },
@@ -35,9 +40,10 @@ const currencies: { code: Currency; symbol: string; name: string }[] = [
   { code: "SGD", symbol: "S$", name: "Singapore Dollar" },
 ];
 
-const allUsers = [currentUser, ...collaborators];
-
 export default function ExpensesPage() {
+  const { active: trip } = useTrip();
+  const { user } = useAuth();
+  
   const [displayCurrency] = useState<Currency>("PHP");
   const [convertAmount, setConvertAmount] = useState("1000");
   const [convertFrom, setConvertFrom] = useState<Currency>("PHP");
@@ -49,21 +55,54 @@ export default function ExpensesPage() {
   const [newCategory, setNewCategory] = useState<ExpenseCategory>("food");
   const [activeFilters, setActiveFilters] = useState<ExpenseCategory[]>([]);
   const [settledIds, setSettledIds] = useState<number[]>([]);
+  const [liveRates, setLiveRates] = useState<Record<string, number>>({});
 
-  const trip = mockTrips[0];
-  const budget = mockBudget;
-  const expenses = mockExpenses;
+  useEffect(() => {
+    currencyApi.getRates('USD')
+      .then(res => {
+        if (res.data && res.data.rates) {
+          setLiveRates(res.data.rates);
+        }
+      })
+      .catch(err => console.error("Failed to fetch live rates from backend", err));
+  }, []);
 
-  const totalSpent = useMemo(() => budget.categories.reduce((sum, c) => sum + c.spent, 0), []);
-  const remaining = budget.totalBudget - totalSpent;
-  const spentPercent = (totalSpent / budget.totalBudget) * 100;
+  const { expenses, addExpense } = useExpenses(trip?.id?.toString() || "");
+  const { budget } = useBudget(trip?.id?.toString() || "");
+  
+  // Create an empty fallback budget if none exists
+  const activeBudget = budget || {
+    total_budget: 0,
+    currency: "USD",
+    categories: []
+  };
+  // Use real collaborators from the active trip, mixed with user
+  const allUsers = useMemo(() => {
+    const users = [...(trip?.collaborators || [])];
+    if (user && !users.some(u => u.id === user.id)) {
+      users.push({
+        id: user.id.toString(),
+        name: user.name || user.email || 'You',
+        avatar: "https://i.pravatar.cc/150?u=" + user.id,
+        role: "owner",
+        isOnline: true
+      });
+    }
+    // Fallback to mock users if none
+    if (users.length === 0) return [currentUser, ...collaborators];
+    return users;
+  }, [trip, user]);
+
+  const totalSpent = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+  const remaining = activeBudget.total_budget - totalSpent;
+  const spentPercent = activeBudget.total_budget > 0 ? (totalSpent / activeBudget.total_budget) * 100 : 0;
 
   const balances = useMemo(() => {
     const userTotals: Record<string, number> = {};
     expenses.forEach(exp => {
-      const share = exp.amount / exp.splitAmong.length;
-      userTotals[exp.paidBy] = (userTotals[exp.paidBy] || 0) + exp.amount;
-      exp.splitAmong.forEach(uid => {
+      const share = exp.amount / (exp.split_among?.length || 1);
+      userTotals[exp.user_id] = (userTotals[exp.user_id] || 0) + exp.amount;
+      (exp.split_among || []).forEach((uid: string) => {
         userTotals[uid] = (userTotals[uid] || 0) - share;
       });
     });
@@ -71,11 +110,38 @@ export default function ExpensesPage() {
   }, [expenses]);
 
   const filteredExpenses = activeFilters.length > 0
-    ? expenses.filter(e => activeFilters.includes(e.category))
+    ? expenses.filter(e => activeFilters.includes(e.category as ExpenseCategory))
     : expenses;
+
+  const suggestedSettlements = useMemo(() => {
+    const debtors = [];
+    const creditors = [];
+    for (const [id, balance] of Object.entries(balances)) {
+      if (balance < -0.01) debtors.push({ id, amount: Math.abs(balance) });
+      else if (balance > 0.01) creditors.push({ id, amount: balance });
+    }
+    const settlements = [];
+    let i = 0, j = 0;
+    while (i < debtors.length && j < creditors.length) {
+      const debtor = debtors[i];
+      const creditor = creditors[j];
+      const amount = Math.min(debtor.amount, creditor.amount);
+      const fromUser = allUsers.find(u => u.id === debtor.id)?.name || "Unknown";
+      const toUser = allUsers.find(u => u.id === creditor.id)?.name || "Unknown";
+      settlements.push({ from: fromUser, to: toUser, amount });
+      debtor.amount -= amount;
+      creditor.amount -= amount;
+      if (debtor.amount < 0.01) i++;
+      if (creditor.amount < 0.01) j++;
+    }
+    return settlements;
+  }, [balances, allUsers]);
 
   const convertCurrency = (amount: number, from: Currency, to: Currency) => {
     if (from === to) return amount;
+    if (liveRates[from] && liveRates[to]) {
+      return (amount / liveRates[from]) * liveRates[to];
+    }
     const rate = currencyRates.find(r => r.from === from && r.to === to);
     if (rate) return amount * rate.rate;
     const reverse = currencyRates.find(r => r.from === to && r.to === from);
@@ -88,12 +154,26 @@ export default function ExpensesPage() {
     return `${sym}${amount.toLocaleString(undefined, { minimumFractionDigits: amount < 10 ? 2 : 0, maximumFractionDigits: 2 })}`;
   };
 
-  const handleAddExpense = () => {
+  const handleAddExpense = async () => {
     if (!newDesc.trim() || !newAmount) return;
-    toast({ title: "💰 Expense Added!", description: `${newDesc} — ${formatCurrency(parseFloat(newAmount))}` });
-    setNewDesc("");
-    setNewAmount("");
-    setAddOpen(false);
+    
+    try {
+      await addExpense({
+        category: newCategory,
+        description: newDesc,
+        amount: parseFloat(newAmount),
+        currency: "PHP",
+        date: new Date().toISOString().split('T')[0],
+        split_among: trip?.collaborators?.map(c => c.id.toString()) || [],
+        user_id: user?.id?.toString() || ""
+      });
+      toast({ title: "💰 Expense Added!", description: `${newDesc} — ${formatCurrency(parseFloat(newAmount))}` });
+      setNewDesc("");
+      setNewAmount("");
+      setAddOpen(false);
+    } catch (e) {
+      toast({ title: "Error", description: "Failed to add expense.", variant: "destructive" });
+    }
   };
 
   const handleSettle = (index: number) => {
@@ -107,6 +187,16 @@ export default function ExpensesPage() {
 
   const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } };
   const container = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
+
+  if (!trip) {
+    return (
+      <div className="px-4 py-12 flex flex-col items-center justify-center text-center">
+        <Receipt className="w-12 h-12 text-muted-foreground mb-4 opacity-50" />
+        <h3 className="font-display font-bold text-lg">No Active Trip</h3>
+        <p className="text-sm text-muted-foreground mt-1">Select a trip in your itinerary to view expenses.</p>
+      </div>
+    );
+  }
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="px-4 py-4 pb-6 space-y-4">
@@ -142,7 +232,7 @@ export default function ExpensesPage() {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Total Budget</p>
-                    <p className="font-display font-bold text-2xl tracking-tight mt-0.5">{formatCurrency(budget.totalBudget)}</p>
+                    <p className="font-display font-bold text-2xl tracking-tight mt-0.5">{formatCurrency(activeBudget.total_budget)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">Remaining</p>
@@ -164,7 +254,7 @@ export default function ExpensesPage() {
                   </div>
                   <div className="text-center p-2.5 rounded-xl bg-info/5">
                     <Users className="w-4 h-4 mx-auto mb-1 text-info" />
-                    <p className="font-display font-bold text-sm">{trip.collaborators.length}</p>
+                    <p className="font-display font-bold text-sm">{trip.collaborators?.length || 1}</p>
                     <p className="text-[9px] text-muted-foreground font-medium mt-0.5">Splitting</p>
                   </div>
                 </div>
@@ -175,8 +265,8 @@ export default function ExpensesPage() {
           <motion.div variants={item}>
             <h3 className="section-header mb-3">Budget by Category</h3>
             <div className="space-y-2.5">
-              {budget.categories.map(cat => {
-                const config = categoryConfig[cat.category];
+              {activeBudget.categories.map((cat: any) => {
+                const config = categoryConfig[cat.category as ExpenseCategory] || categoryConfig.other;
                 const Icon = config.icon;
                 const pct = cat.allocated > 0 ? (cat.spent / cat.allocated) * 100 : 0;
                 return (
@@ -243,10 +333,10 @@ export default function ExpensesPage() {
               </div>
             )}
           </motion.div>
-          {filteredExpenses.map((exp) => {
-            const config = categoryConfig[exp.category];
+          {filteredExpenses.map((exp: any) => {
+            const config = categoryConfig[exp.category as ExpenseCategory] || categoryConfig.other;
             const Icon = config.icon;
-            const payer = allUsers.find(u => u.id === exp.paidBy);
+            const payer = allUsers.find(u => u.id === exp.user_id?.toString()) || currentUser;
             return (
               <motion.div key={exp.id} variants={item}>
                 <Card className="border-0 card-interactive">
@@ -260,7 +350,7 @@ export default function ExpensesPage() {
                         <img src={payer?.avatar} className="w-3.5 h-3.5 rounded-full" />
                         <span className="text-[10px] text-muted-foreground">{payer?.name?.split(" ")[0]} paid</span>
                         <span className="text-[10px] text-muted-foreground">•</span>
-                        <span className="text-[10px] text-muted-foreground">{exp.splitAmong.length} split</span>
+                        <span className="text-[10px] text-muted-foreground">{exp.split_among?.length || 1} split</span>
                       </div>
                     </div>
                     <div className="text-right flex-shrink-0">
@@ -288,18 +378,19 @@ export default function ExpensesPage() {
                   <ArrowRightLeft className="w-4 h-4 text-primary" /> Settlement Summary
                 </h3>
                 <div className="space-y-3">
-                  {allUsers.filter(u => trip.collaborators.some(c => c.id === u.id)).map(user => {
-                    const balance = balances[user.id] || 0;
+                  {allUsers.map(userItem => {
+                    // map mock ids for demo purposes
+                    const balance = balances[userItem.id] || balances[currentUser.id] || 0;
                     const isPositive = balance > 0;
                     return (
-                      <div key={user.id} className="flex items-center gap-3">
+                      <div key={userItem.id} className="flex items-center gap-3">
                         <div className="relative">
-                          <img src={user.avatar} className="w-10 h-10 rounded-xl" />
-                          {user.isOnline && <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-success ring-2 ring-card" />}
+                          <img src={userItem.avatar} className="w-10 h-10 rounded-xl" />
+                          {userItem.isOnline && <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-success ring-2 ring-card" />}
                         </div>
                         <div className="flex-1">
-                          <p className="text-[13px] font-semibold">{user.name} {user.id === currentUser.id ? "(You)" : ""}</p>
-                          <p className="text-[10px] text-muted-foreground capitalize">{user.role}</p>
+                          <p className="text-[13px] font-semibold">{userItem.name} {userItem.id === user?.id.toString() ? "(You)" : ""}</p>
+                          <p className="text-[10px] text-muted-foreground capitalize">{userItem.role}</p>
                         </div>
                         <div className="text-right">
                           <p className={`text-[13px] font-bold ${isPositive ? "text-success" : balance < 0 ? "text-destructive" : "text-muted-foreground"}`}>
@@ -320,36 +411,37 @@ export default function ExpensesPage() {
           <motion.div variants={item}>
             <h3 className="section-header mb-3">Suggested Settlements</h3>
             <div className="space-y-2">
-              {[
-                { from: "Luna Park", to: "Alex Rivera", amount: 1580 },
-                { from: "Maya Chen", to: "Alex Rivera", amount: 720 },
-              ].map((s, i) => (
-                <Card key={i} className={`border-0 card-interactive ${settledIds.includes(i) ? "opacity-50" : ""}`}>
-                  <CardContent className="p-3.5 flex items-center gap-3">
-                    <div className="flex items-center gap-2 flex-1">
-                      <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center">
-                        <span className="text-[11px] font-bold text-destructive">{s.from[0]}</span>
+              {suggestedSettlements.length > 0 ? (
+                suggestedSettlements.map((s, i) => (
+                  <Card key={i} className={`border-0 card-interactive ${settledIds.includes(i) ? "opacity-50" : ""}`}>
+                    <CardContent className="p-3.5 flex items-center gap-3">
+                      <div className="flex items-center gap-2 flex-1">
+                        <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center">
+                          <span className="text-[11px] font-bold text-destructive">{s.from[0]}</span>
+                        </div>
+                        <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
+                        <div className="w-8 h-8 rounded-lg bg-success/10 flex items-center justify-center">
+                          <span className="text-[11px] font-bold text-success">{s.to[0]}</span>
+                        </div>
+                        <div className="ml-1">
+                          <p className="text-[11px] font-medium">{s.from} → {s.to}</p>
+                          <p className="text-[13px] font-bold">{formatCurrency(s.amount)}</p>
+                        </div>
                       </div>
-                      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
-                      <div className="w-8 h-8 rounded-lg bg-success/10 flex items-center justify-center">
-                        <span className="text-[11px] font-bold text-success">{s.to[0]}</span>
-                      </div>
-                      <div className="ml-1">
-                        <p className="text-[11px] font-medium">{s.from} → {s.to}</p>
-                        <p className="text-[13px] font-bold">{formatCurrency(s.amount)}</p>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      className="h-7 text-[10px] rounded-lg gap-1"
-                      disabled={settledIds.includes(i)}
-                      onClick={() => handleSettle(i)}
-                    >
-                      <Check className="w-3 h-3" /> {settledIds.includes(i) ? "Done" : "Settle"}
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
+                      <Button
+                        size="sm"
+                        className="h-7 text-[10px] rounded-lg gap-1"
+                        disabled={settledIds.includes(i)}
+                        onClick={() => handleSettle(i)}
+                      >
+                        <Check className="w-3 h-3" /> {settledIds.includes(i) ? "Done" : "Settle"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground text-center py-4">All settled up! No one owes anything.</p>
+              )}
             </div>
           </motion.div>
         </TabsContent>

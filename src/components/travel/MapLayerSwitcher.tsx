@@ -25,14 +25,12 @@ export function MapLayerSwitcher({ value, onChange, className = "" }: Props) {
     <Popover>
       <PopoverTrigger asChild>
         <Button
-          size="sm"
+          size="icon"
           variant="outline"
-          className={`h-9 px-2.5 gap-1.5 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-xl border-border/50 ${className}`}
+          className={`h-11 w-11 bg-card/95 backdrop-blur-sm shadow-card-hover rounded-full border-border/50 ${className}`}
           aria-label="Change map style"
         >
-          <Layers className="w-3.5 h-3.5 text-primary" />
-          <ActiveIcon className="w-3.5 h-3.5" />
-          <span className="text-[10px] font-semibold">{active.label}</span>
+          <Layers className="w-5 h-5 text-primary" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-44 p-1.5">

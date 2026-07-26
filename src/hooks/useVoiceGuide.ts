@@ -10,7 +10,7 @@ export interface VoicePrefs {
   voiceURI?: string;
 }
 
-const KEY = "trailsync:voicePrefs";
+const KEY = "Intellitravel:voicePrefs";
 
 const defaultPrefs: VoicePrefs = {
   enabled: true, volume: 1, rate: 1, lang: "en-US", voiceURI: undefined,

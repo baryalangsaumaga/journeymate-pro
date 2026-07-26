@@ -36,7 +36,7 @@ export interface UseVideoCallReturn {
   isVideoOff: boolean;
   isFrontCamera: boolean;
   callDuration: number;
-  initiateCall: (remoteUserId: string) => Promise<void>;
+  initiateCall: (remoteUserId: string, callMode?: CallMode) => Promise<void>;
   acceptIncomingCall: () => Promise<void>;
   rejectIncomingCall: () => void;
   hangUp: () => void;
@@ -60,6 +60,7 @@ export function useVideoCall(
   const [callDuration, setCallDuration] = useState(0);
 
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ringingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const callStatusRef = useRef<CallStatus>("idle");
 
   useEffect(() => { callStatusRef.current = callStatus; }, [callStatus]);
@@ -84,8 +85,14 @@ export function useVideoCall(
     setRemoteStream(null);
     setIsMuted(false);
     setIsVideoOff(false);
-    setTimeout(() => setCallStatus("idle"), 1500);
+    if (ringingTimeoutRef.current) {
+      clearTimeout(ringingTimeoutRef.current);
+      ringingTimeoutRef.current = null;
+    }
+    setTimeout(() => setCallStatus("idle"), 500);
   }, []);
+
+
 
   useEffect(() => {
     if (!conversationId || !localUserId) return;
@@ -136,12 +143,13 @@ export function useVideoCall(
     };
   }, []);
 
-  const initiateCall = useCallback(async (remoteUserId: string) => {
+  const initiateCall = useCallback(async (remoteUserId: string, callMode?: CallMode) => {
     if (!localUserId || !conversationId) return;
+    const effectiveMode = callMode || mode;
     try {
       setCallStatus("calling");
       const { localStream: ls, remoteStream: rs } = await startCall(
-        conversationId, localUserId, remoteUserId, mode,
+        conversationId, localUserId, remoteUserId, effectiveMode,
       );
       setLocalStream(ls);
       setRemoteStream(rs);
@@ -181,6 +189,27 @@ export function useVideoCall(
     endCall("hangup");
     resetToEnded();
   }, [resetToEnded]);
+
+  useEffect(() => {
+    if (callStatus === "calling" || callStatus === "ringing") {
+      ringingTimeoutRef.current = setTimeout(() => {
+        if (callStatusRef.current === "calling" || callStatusRef.current === "ringing") {
+          console.warn("[Call] Ringing/calling timeout. Hanging up.");
+          hangUp();
+        }
+      }, 30000);
+    } else {
+      if (ringingTimeoutRef.current) {
+        clearTimeout(ringingTimeoutRef.current);
+        ringingTimeoutRef.current = null;
+      }
+    }
+    return () => {
+      if (ringingTimeoutRef.current) {
+        clearTimeout(ringingTimeoutRef.current);
+      }
+    };
+  }, [callStatus, hangUp]);
 
   const toggleMuteAudio = useCallback(() => {
     setIsMuted((prev) => { toggleMute(!prev); return !prev; });

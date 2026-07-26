@@ -3,9 +3,9 @@
 import type { RouteResult } from "@/lib/routing";
 import type { Location } from "@/types/travel";
 
-const LEGACY_KEY = "trailsync:offlineRoute:v1";
-const KEYED_PREFIX = "trailsync:offlineRoute:v2:";
-const INDEX_KEY = "trailsync:offlineRoute:index:v2";
+const LEGACY_KEY = "Intellitravel:offlineRoute:v1";
+const KEYED_PREFIX = "Intellitravel:offlineRoute:v2:";
+const INDEX_KEY = "Intellitravel:offlineRoute:index:v2";
 
 export interface OfflineRouteCache {
   savedAt: number;

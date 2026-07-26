@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Car, Bus, Footprints, Bike, ArrowRight, ArrowLeft, ArrowUp,
   CornerUpRight, CornerUpLeft, Flag, Gauge, Route, Locate,
-  UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2, Lock, Unlock, Box, Signal, RotateCcw,
+  UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2, Lock, Unlock, Box, Signal, RotateCcw, Download,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,6 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { mockLocations } from "@/data/mockData";
 import { fetchRoutePlan, formatDistance, formatDuration, RouteResult, RouteStep, RoutePlan } from "@/lib/routing";
 import { RouteDetailsPanel } from "@/components/travel/RouteDetailsPanel";
 import { MapLayerSwitcher, type MapStyle } from "@/components/travel/MapLayerSwitcher";
@@ -25,9 +24,9 @@ import { VoiceSettingsPopover } from "@/components/travel/VoiceSettingsPopover";
 import { useWeather } from "@/hooks/useWeather";
 import { tripSession } from "@/lib/tripSession";
 import { saveOfflineRoute, loadOfflineRoute, saveTripOffline } from "@/lib/offlineRoute";
-import { planTransit, type TransitPlan } from "@/lib/transitPlanner";
-import { TransitPlanCard } from "@/components/travel/TransitPlanCard";
 import type { Location } from "@/types/travel";
+import { usePlaces } from "@/hooks/usePlaces";
+import { offlineTileLayer } from "@/lib/offlineMap";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -55,7 +54,7 @@ const carIcon = (heading: number | null) => L.divIcon({
 
 const transitModes = [
   { id: "car" as const, icon: Car, label: "Drive" },
-  { id: "transit" as const, icon: Bus, label: "Transit" },
+  { id: "transit" as const, icon: Bus, label: "Commute" },
   { id: "walk" as const, icon: Footprints, label: "Walk" },
   { id: "bike" as const, icon: Bike, label: "Bike" },
 ];
@@ -96,9 +95,8 @@ export default function NavigationPage() {
   const [mapStyle, setMapStyle] = useState<MapStyle>("voyager");
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [alternates, setAlternates] = useState<RouteResult[]>([]);
+  const [speedLimits, setSpeedLimits] = useState<any[]>([]);
   const [selectedAltIdx, setSelectedAltIdx] = useState<number>(0); // 0 = primary
-  const [transitPlans, setTransitPlans] = useState<TransitPlan[]>([]);
-  const [selectedTransitId, setSelectedTransitId] = useState<string | null>(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
   const [destination, setDestination] = useState<Location | null>(null);
@@ -117,6 +115,9 @@ export default function NavigationPage() {
     const raw = window.localStorage.getItem("nav.accuracyThreshold");
     return raw ? Number(raw) : 40;
   });
+  const [downloadingMap, setDownloadingMap] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+
   useEffect(() => { try { window.localStorage.setItem("nav.accuracyThreshold", String(accuracyThreshold)); } catch {} }, [accuracyThreshold]);
 
   // Persist voice prefs
@@ -136,6 +137,14 @@ export default function NavigationPage() {
   const startPoint: [number, number] = userPos ?? [14.5895, 120.9740];
   const { speak, cancel: cancelVoice } = useVoiceGuide(voicePrefs);
 
+  // Dynamic API places for near-route suggestions (restaurants + gas stations)
+  const { places: routeRestaurants } = usePlaces({ lat: startPoint[0], lng: startPoint[1], category: "restaurant" });
+  const { places: routeGasStations } = usePlaces({ lat: startPoint[0], lng: startPoint[1], category: "gas-station" });
+
+  const suggestionsAlongRoute = useMemo(() => {
+    return [...routeRestaurants, ...routeGasStations];
+  }, [routeRestaurants, routeGasStations]);
+
   // Weather along route (sampled at midpoint of current leg).
   const midCoord = route?.coordinates?.[Math.floor(route.coordinates.length / 2)];
   const { data: areaWeather } = useWeather(midCoord?.[0], midCoord?.[1]);
@@ -152,12 +161,36 @@ export default function NavigationPage() {
   const eateryMarkersRef = useRef<L.Marker[]>([]);
   const accuracyRingRef = useRef<L.Circle | null>(null);
   const headingConeRef = useRef<L.Polygon | null>(null);
+  const lastFittedRouteRef = useRef<string | null>(null); // prevents repeated fitBounds
+  const hasAutoCentered = useRef(false);
 
   const tileUrls: Record<string, string> = {
     voyager: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
     light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
     satellite: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  };
+
+  const handleDownloadMap = async () => {
+    if (!mapInstance.current) return;
+    setDownloadingMap(true);
+    setDownloadProgress(0);
+    
+    const bounds = mapInstance.current.getBounds();
+    try {
+      const { downloadTiles } = await import("@/lib/offlineMap");
+      await downloadTiles(
+        bounds, 
+        12, 16, 
+        tileUrls[mapStyle],
+        (dl, total) => setDownloadProgress(Math.round((dl / total) * 100))
+      );
+      toast({ title: "✅ Map Downloaded", description: "This area is available offline." });
+    } catch (e) {
+      toast({ title: "Download failed", variant: "destructive" });
+    } finally {
+      setDownloadingMap(false);
+    }
   };
 
   // Hand-off from Itinerary "Start the Trip"
@@ -193,7 +226,7 @@ export default function NavigationPage() {
   // Cache route + alternates + nearby places for offline use.
   useEffect(() => {
     if (!route || !destination) return;
-    const nearby = mockLocations.filter(l =>
+    const nearby = suggestionsAlongRoute.filter(l =>
       route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
     );
     saveOfflineRoute({ destination, route, alternates, nearby, mode: selectedMode });
@@ -201,7 +234,7 @@ export default function NavigationPage() {
     saveTripOffline(destination.id, {
       destination, route, alternates, nearby, mode: selectedMode, tripTitle: destination.name,
     });
-  }, [route, alternates, destination, selectedMode]);
+  }, [route, alternates, destination, selectedMode, suggestionsAlongRoute]);
 
   // Swap the primary route with the selected alternate.
   const selectAlternate = (i: number) => {
@@ -225,7 +258,7 @@ export default function NavigationPage() {
     const map = L.map(mapRef.current, {
       center: startPoint, zoom: 13, zoomControl: false, attributionControl: false,
     });
-    tileRef.current = L.tileLayer(tileUrls[mapStyle]).addTo(map);
+    tileRef.current = offlineTileLayer(tileUrls[mapStyle]).addTo(map);
     mapInstance.current = map;
     // User-initiated drag disables follow-mode so the map doesn't fight them
     map.on("dragstart", () => setFollowMode(false));
@@ -236,6 +269,14 @@ export default function NavigationPage() {
 
   // Switch tiles
   useEffect(() => { tileRef.current?.setUrl(tileUrls[mapStyle]); }, [mapStyle]);
+
+  // Auto-center on user's location when it first becomes available
+  useEffect(() => {
+    if (mapInstance.current && userPos && !route && !hasAutoCentered.current) {
+      mapInstance.current.setView(userPos, 14);
+      hasAutoCentered.current = true;
+    }
+  }, [userPos, route]);
 
   // When tilt mode flips, give Leaflet a beat to recompute its viewport.
   useEffect(() => {
@@ -295,28 +336,15 @@ export default function NavigationPage() {
 
   // Fetch route plan (primary + alternates) when destination/mode/userPos changes.
   useEffect(() => {
-    if (!destination) { setRoute(null); setAlternates([]); setTransitPlans([]); return; }
+    if (!destination) { setRoute(null); setAlternates([]); return; }
     let cancelled = false;
     setLoadingRoute(true);
-
-    // Transit uses the mock multi-leg planner; still fetch a driving line so the
-    // map has a visual reference of the point-to-point path.
-    if (selectedMode === "transit") {
-      const plans = planTransit(
-        { lat: startPoint[0], lng: startPoint[1], name: "Your location" },
-        destination,
-      );
-      setTransitPlans(plans);
-      setSelectedTransitId(plans[0]?.id ?? null);
-    } else {
-      setTransitPlans([]);
-      setSelectedTransitId(null);
-    }
 
     fetchRoutePlan(startPoint, [destination.lat, destination.lng], selectedMode).then(plan => {
       if (cancelled) return;
       setRoute(plan.primary);
       setAlternates(plan.alternates);
+      setSpeedLimits(plan.speed_limits || []);
       setSelectedAltIdx(0);
       setStepIdx(0);
       setLoadingRoute(false);
@@ -363,25 +391,31 @@ export default function NavigationPage() {
       color: "hsl(162, 72%, 25%)", weight: 6, opacity: 1,
     }).addTo(map);
 
-    // Eateries near the active route
+    // Suggestions (eateries + gas stations) near the active route from API
     const activeRoute = selectedAltIdx === 0 ? route : alternates[selectedAltIdx - 1] ?? route;
-    const eateries = mockLocations.filter(l =>
-      (l.type === "restaurant" || l.type === "poi") &&
-      activeRoute.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
+    const itemsNearRoute = suggestionsAlongRoute.filter(l =>
+      activeRoute.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05)
     );
-    eateries.forEach(e => {
-      const mk = L.marker([e.lat, e.lng], { icon: dot("#f59e0b", 10) })
-        .bindPopup(`<strong>🍽️ ${e.name}</strong><br/><small>${e.rating ?? ""}★ along your route</small>`).addTo(map);
+    itemsNearRoute.forEach(e => {
+      const isGas = e.type === "gas-station";
+      const iconEmoji = isGas ? "⛽" : "🍽️";
+      const iconColor = isGas ? "#3b82f6" : "#f59e0b"; // blue for gas, amber for food
+      const labelText = isGas ? "gas station along your route" : "along your route";
+      
+      const mk = L.marker([e.lat, e.lng], { icon: dot(iconColor, 10) })
+        .bindPopup(`<strong>${iconEmoji} ${e.name}</strong><br/><small>${e.rating ? e.rating + "★ " : ""}${labelText}</small>`).addTo(map);
       eateryMarkersRef.current.push(mk);
     });
 
-    if (!isNavigating && activeRoute.coordinates.length > 1) {
-      // Higher default zoom for walk so sidewalks are visible.
+    // Only fit bounds when a genuinely new route loads — not on alt clicks or eatery changes.
+    const routeFingerprint = `${route.distance}-${route.duration}-${selectedAltIdx}`;
+    if (!isNavigating && activeRoute.coordinates.length > 1 && lastFittedRouteRef.current !== routeFingerprint) {
+      lastFittedRouteRef.current = routeFingerprint;
       const bounds = L.latLngBounds(activeRoute.coordinates);
       const maxZoom = selectedMode === "walk" ? 17 : selectedMode === "bike" ? 16 : 15;
       map.fitBounds(bounds, { padding: [40, 40], maxZoom });
     }
-  }, [route, alternates, selectedAltIdx, tripMode, selectedMode]);
+  }, [route, alternates, selectedAltIdx, tripMode, selectedMode, suggestionsAlongRoute]);
 
   // Live GPS follow: snap user position to the route, advance steps, voice prompts
   useEffect(() => {
@@ -396,7 +430,7 @@ export default function NavigationPage() {
       carMarkerRef.current.setLatLng(userPos);
       carMarkerRef.current.setIcon(carIcon(fix?.heading ?? null));
     }
-    if (followMode) map.setView(userPos, 16, { animate: true });
+    if (followMode) map.panTo(userPos, { animate: true });
 
     // Find nearest coordinate on route -> draw traveled polyline up to that index
     let minIdx = 0, minD = Infinity;
@@ -448,7 +482,7 @@ export default function NavigationPage() {
   useEffect(() => {
     if (!isNavigating || !route) return;
     const id = setInterval(() => {
-      const eateries = mockLocations.filter(l =>
+      const eateries = suggestionsAlongRoute.filter(l =>
         (l.type === "restaurant" || l.type === "poi") &&
         route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05),
       );
@@ -457,17 +491,17 @@ export default function NavigationPage() {
       toast({ title: "🍽️ Eatery Ahead", description: `${pick.name} · ${pick.rating ?? ""}★` });
     }, 45000);
     return () => clearInterval(id);
-  }, [isNavigating, route]);
+  }, [isNavigating, route, suggestionsAlongRoute]);
 
   // Weather monitor along the way
   useEffect(() => {
     if (!isNavigating || !areaWeather) return;
-    toast({ title: `${weatherEmoji(areaWeather.condition)} ${areaWeather.tempC}°C ahead`, description: areaWeather.summary });
+    toast({ title: `${areaWeather.condition} ${areaWeather.tempC}°C ahead`, description: areaWeather.summary });
   }, [isNavigating, areaWeather?.condition]);
 
   const handleLocate = () => {
     if (!mapInstance.current || !userPos) return;
-    mapInstance.current.setView(userPos, 16, { animate: true });
+    mapInstance.current.panTo(userPos, { animate: true });
     setFollowMode(true); // re-engage follow on recenter
     // Tilt is preserved unless the user explicitly disabled keepTiltOnRecenter
     if (!keepTiltOnRecenter && isNavigating) setTiltLocked(true);
@@ -546,6 +580,23 @@ export default function NavigationPage() {
             <Badge className="bg-amber-500 text-white text-[9px] h-5">Offline mode</Badge>
           )}
           <div className="flex flex-col gap-2 items-end">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-10 w-10 rounded-full bg-card/95 backdrop-blur-sm shadow-card-hover border-border/50 overflow-hidden relative"
+              onClick={handleDownloadMap}
+              disabled={downloadingMap}
+              title="Download Offline Map"
+            >
+              {downloadingMap ? (
+                <>
+                  <div className="absolute inset-0 bg-primary/20" style={{ height: `${100 - downloadProgress}%` }} />
+                  <span className="text-[9px] font-bold z-10">{downloadProgress}%</span>
+                </>
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+            </Button>
             <Button
               variant="default"
               size="icon"
@@ -639,7 +690,7 @@ export default function NavigationPage() {
         {!searchHidden && !tripMode && (
           <motion.div
             initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-            className="absolute top-4 left-4 right-16 z-30"
+            className="absolute top-4 left-4 z-30 w-full max-w-[280px]"
           >
             <PlaceSearchInput
               placeholder="Search destination…"
@@ -652,7 +703,7 @@ export default function NavigationPage() {
           <motion.div
             key="dest-pill"
             initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-            className="absolute top-4 left-4 right-16 z-30"
+            className="absolute top-4 left-4 z-30 w-full max-w-[280px]"
           >
             <button
               onClick={() => setSearchHidden(false)}
@@ -782,7 +833,7 @@ export default function NavigationPage() {
                     <Icon className="w-4 h-4" />
                     <span className="text-[10px] font-semibold">{label}</span>
                     <span className={`text-[9px] ${selectedMode === id ? "opacity-70" : "text-muted-foreground"}`}>
-                      {loadingRoute ? "…" : route ? formatDuration(route.duration) : "—"}
+                      {loadingRoute && selectedMode === id ? "…" : selectedMode === id && route ? formatDuration(route.duration) : "Tap to calc"}
                     </span>
                   </button>
                 ))}
@@ -797,21 +848,22 @@ export default function NavigationPage() {
                   <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
                     {[route, ...alternates].filter(Boolean).map((r, i) => {
                       if (!r) return null;
-                      const isActive = i === 0;
-                      const label = r.label === "shorter" ? "Shorter" : r.label === "scenic" ? "Scenic" : r.label === "fastest" ? "Fastest" : "Alternate";
+                      const isActive = selectedAltIdx === i;
                       return (
                         <button
                           key={i}
                           onClick={() => selectAlternate(i)}
-                          className={`flex-shrink-0 min-w-[110px] px-3 py-2 rounded-xl text-left transition-all tap-highlight border ${
-                            isActive
-                              ? "bg-primary text-primary-foreground border-primary shadow-travel"
-                              : "bg-muted border-border/40 hover:bg-muted/80"
+                          className={`flex-shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[10px] font-semibold transition-colors ${
+                            isActive ? "bg-primary/10 border-primary/30 text-primary" : "bg-card border-border/50 text-muted-foreground"
                           }`}
                         >
-                          <p className="text-[10px] font-bold">{label}</p>
-                          <p className="text-[11px] font-display font-bold leading-tight">{formatDuration(r.duration)}</p>
-                          <p className={`text-[9px] ${isActive ? "opacity-75" : "text-muted-foreground"}`}>{formatDistance(r.distance)}</p>
+                          <Route className="w-3.5 h-3.5" />
+                          <div className="text-left">
+                            <p>{formatDuration(r.duration)}</p>
+                            <p className={`text-[8px] truncate max-w-[80px] ${r.label === "toll-free" ? "text-emerald-500 font-bold" : "opacity-70"}`}>
+                              {r.label === "toll-free" ? "Avoids Tolls" : (r.label ?? `Route ${i + 1}`)}
+                            </p>
+                          </div>
                         </button>
                       );
                     })}
@@ -819,117 +871,37 @@ export default function NavigationPage() {
                 </div>
               )}
 
-              {/* Transit plans — mock multi-leg suggestions with fares and transfer hints. */}
-              {selectedMode === "transit" && transitPlans.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-0.5">
-                    Transit options · what to ride
-                  </p>
-                  <div className="space-y-2">
-                    {transitPlans.map(p => (
-                      <TransitPlanCard
-                        key={p.id}
-                        plan={p}
-                        active={selectedTransitId === p.id}
-                        onSelect={() => setSelectedTransitId(p.id)}
-                      />
-                    ))}
+              {destination && (
+                <div className="grid grid-cols-[1fr_auto] gap-2 items-start mt-2">
+                  <div className="min-w-0 pr-2">
+                    <h3 className="font-display font-bold text-[15px] truncate">{destination.name}</h3>
+                    <p className="text-[10px] text-muted-foreground truncate">{destination.address || destination.description || "Unknown address"}</p>
+                    {showToll && (
+                      <div className="flex items-center gap-1 text-[10px] font-semibold text-warning mt-1">
+                        <Badge variant="outline" className="text-[8px] h-[16px] px-1 border-warning/30 text-warning bg-warning/10">Tolls</Badge>
+                        This route has tolls
+                      </div>
+                    )}
                   </div>
+                  {route && (
+                    <Button
+                      className={`h-10 rounded-xl px-6 font-display font-bold text-[13px] shadow-travel ${isNavigating ? "bg-destructive text-white hover:bg-destructive/90" : "glow-primary"}`}
+                      onClick={handleStartNav}
+                    >
+                      {isNavigating ? "Stop" : "Go"}
+                    </Button>
+                  )}
                 </div>
               )}
 
-
-              {route && (
-                <Card className="border-0 card-elevated">
-                  <CardContent className="p-3.5">
-                    <div className="flex items-center justify-between mb-2.5">
-                      <div className="flex items-center gap-2">
-                        <Route className="w-4 h-4 text-primary" />
-                        <span className="text-xs font-semibold">Live Route</span>
-                      </div>
-                      <Badge variant="outline" className="text-[9px] h-5 font-semibold border-primary/20 text-primary">
-                        {loadingRoute ? "Loading…" : `${route.steps.length} steps`}
-                      </Badge>
-                    </div>
-                    <div className={`grid ${showToll ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
-                      <div className="text-center p-2 rounded-lg bg-muted">
-                        <p className="font-display font-bold text-sm">{formatDistance(route.distance)}</p>
-                        <p className="text-[9px] text-muted-foreground font-medium mt-0.5">Distance</p>
-                      </div>
-                      <div className="text-center p-2 rounded-lg bg-muted">
-                        <p className="font-display font-bold text-sm">{formatDuration(route.duration)}</p>
-                        <p className="text-[9px] text-muted-foreground font-medium mt-0.5">Duration</p>
-                      </div>
-                      {showToll && (
-                        <div className="text-center p-2 rounded-lg bg-muted">
-                          <p className="font-display font-bold text-sm">₱385</p>
-                          <p className="text-[9px] text-muted-foreground font-medium mt-0.5">Toll Fee</p>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+              {destination && (
+                <RouteDetailsPanel routeCoords={route?.coordinates} mode={selectedMode} speedLimits={speedLimits} steps={route?.steps} />
               )}
 
-              {/* Route Details now contains speed limit + gas stations (merged). */}
-              {route && <RouteDetailsPanel routeCoords={route.coordinates} mode={selectedMode} />}
-
-              {/* Eateries along the way (visible during planning too). */}
-              {route && (
-                <Card className="border-0 card-elevated">
-                  <CardContent className="p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold flex items-center gap-1.5">
-                        <UtensilsCrossed className="w-3.5 h-3.5 text-accent" /> Eateries Along the Way
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      {mockLocations
-                        .filter(l => (l.type === "restaurant" || l.type === "poi") &&
-                          route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05))
-                        .slice(0, 4)
-                        .map(e => (
-                          <div key={e.id} className="flex items-center justify-between text-[11px] p-1.5 rounded bg-muted/40">
-                            <span className="font-semibold truncate">{e.name}</span>
-                            <span className="text-muted-foreground">★ {e.rating}</span>
-                          </div>
-                        ))}
-                      {!mockLocations.some(l => (l.type === "restaurant" || l.type === "poi") &&
-                        route.coordinates.some(([rlat, rlng]) => Math.hypot(rlat - l.lat, rlng - l.lng) < 0.05)) && (
-                        <p className="text-[10px] text-muted-foreground text-center py-1">No eateries detected near route.</p>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              <Button
-                disabled={!route || loadingRoute}
-                className={`w-full h-12 rounded-2xl font-display font-bold shadow-travel text-sm gap-2 ${
-                  isNavigating ? "bg-destructive hover:bg-destructive/90" : "glow-primary"
-                }`}
-                onClick={handleStartNav}
-              >
-                {loadingRoute ? <Loader2 className="w-4 h-4 animate-spin" /> : <NavIcon className={`w-4 h-4 ${isNavigating ? "" : "animate-pulse"}`} />}
-                {isNavigating ? "Stop Navigation" : "Start Turn-by-Turn"}
-              </Button>
             </motion.div>
           )}
         </AnimatePresence>
       </motion.div>
     </div>
   );
-}
-
-function weatherEmoji(c?: string) {
-  switch (c) {
-    case "sunny": return "☀️";
-    case "cloudy": return "⛅";
-    case "rainy": return "🌧️";
-    case "stormy": return "⛈️";
-    case "snowy": return "❄️";
-    case "foggy": return "🌫️";
-    case "windy": return "💨";
-    default: return "🌤️";
-  }
 }

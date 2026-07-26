@@ -23,7 +23,7 @@ export function generatePDF({ title, subtitle, sections, footer }: ReportInput):
   doc.setFontSize(22);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(20, 20, 25);
-  doc.text("TrailSync", 40, y);
+  doc.text("Journeymate", 40, y);
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(120, 120, 130);
@@ -67,15 +67,19 @@ export function generatePDF({ title, subtitle, sections, footer }: ReportInput):
 
     for (const [label, value] of section.rows) {
       if (y > H - 60) { doc.addPage(); y = 56; }
+      const splitLabel = doc.splitTextToSize(label, 150);
+      const splitValue = doc.splitTextToSize(value, W - 200 - 40);
+      
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(120, 120, 130);
-      doc.text(label, 40, y);
+      doc.text(splitLabel, 40, y);
+      
       doc.setFont("helvetica", "bold");
       doc.setTextColor(30, 30, 35);
-      const split = doc.splitTextToSize(value, W - 240);
-      doc.text(split, 200, y);
-      y += Math.max(16, split.length * 13);
+      doc.text(splitValue, 200, y);
+      
+      y += Math.max(16, splitLabel.length * 13, splitValue.length * 13) + 4;
     }
     y += 14;
   }
@@ -86,7 +90,7 @@ export function generatePDF({ title, subtitle, sections, footer }: ReportInput):
     doc.setPage(i);
     doc.setFontSize(8);
     doc.setTextColor(160, 160, 170);
-    doc.text(footer ?? "TrailSync · trailsync.app", 40, H - 24);
+    doc.text(footer ?? "Journeymate · Journeymate.app", 40, H - 24);
     doc.text(`Page ${i} of ${total}`, W - 40, H - 24, { align: "right" });
   }
   return doc;

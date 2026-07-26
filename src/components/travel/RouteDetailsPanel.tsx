@@ -2,46 +2,62 @@
 // Driven by route distance + the mockLocations dataset.
 import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Gauge, Fuel, Eye, AlertTriangle, ChevronDown, Receipt } from "lucide-react";
+import { Gauge, Fuel, Eye, AlertTriangle, ChevronDown, Receipt, Route, Flag, CornerUpLeft, CornerUpRight, ArrowUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { mockLocations } from "@/data/mockData";
-import { formatDistance } from "@/lib/routing";
+import { formatDistance, type RouteStep } from "@/lib/routing";
+import { useQuery } from "@tanstack/react-query";
+import { placesApi } from "@/lib/api";
 
 interface Props {
   routeCoords?: [number, number][];
   mode: "car" | "transit" | "walk" | "bike";
+  speedLimits?: { name: string; max_speed: number }[];
+  steps?: RouteStep[];
 }
 
-const SPEED_LIMIT_BY_MODE: Record<string, { kmh: number; zone: string }> = {
-  car: { kmh: 80, zone: "Expressway" },
-  transit: { kmh: 60, zone: "Urban" },
-  walk: { kmh: 6, zone: "Pedestrian" },
-  bike: { kmh: 25, zone: "Mixed" },
-};
-
-const RESTRICTIONS_BY_MODE: Record<string, string[]> = {
-  car: ["No trucks 6am-10am", "Toll required SLEX"],
-  transit: ["Limited late-night service"],
-  walk: ["Sidewalk closure on Roxas Blvd"],
-  bike: ["No bikes on expressway"],
-};
-
-export function RouteDetailsPanel({ routeCoords, mode }: Props) {
+export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps }: Props) {
   const [open, setOpen] = useState(false);
 
-  const { fuelStops, viewpoints } = useMemo(() => {
-    if (!routeCoords?.length) return { fuelStops: [], viewpoints: [] };
-    const near = (lat: number, lng: number) =>
-      routeCoords.some(([rlat, rlng]) => Math.hypot(rlat - lat, rlng - lng) < 0.15);
-    return {
-      fuelStops: mockLocations.filter(l => l.type === "gas-station" && near(l.lat, l.lng)),
-      viewpoints: mockLocations.filter(l => l.type === "viewpoint" && near(l.lat, l.lng)),
-    };
-  }, [routeCoords]);
+  const { data: fuelStops = [] } = useQuery({
+    queryKey: ['route_fuel', routeCoords?.length],
+    queryFn: async () => {
+      if (!routeCoords?.length) return [];
+      const mid = routeCoords[Math.floor(routeCoords.length / 2)];
+      const res = await placesApi.search({ lat: mid[0], lng: mid[1], query: "gas station" }).catch(() => ({ data: [] }));
+      return res.data || [];
+    },
+    enabled: !!routeCoords?.length,
+  });
 
-  const limit = SPEED_LIMIT_BY_MODE[mode];
-  const restrictions = RESTRICTIONS_BY_MODE[mode] ?? [];
+  const { data: viewpoints = [] } = useQuery({
+    queryKey: ['route_views', routeCoords?.length],
+    queryFn: async () => {
+      if (!routeCoords?.length) return [];
+      const mid = routeCoords[Math.floor(routeCoords.length / 2)];
+      const res = await placesApi.search({ lat: mid[0], lng: mid[1], query: "viewpoint" }).catch(() => ({ data: [] }));
+      return res.data || [];
+    },
+    enabled: !!routeCoords?.length,
+  });
+
+  // Use highest speed limit on route, or fallback
+  const maxSpeedInfo = useMemo(() => {
+    if (speedLimits?.length) {
+      return speedLimits.reduce((max, current) => 
+        current.max_speed > max.max_speed ? current : max, 
+        speedLimits[0]
+      );
+    }
+    return { name: "Unknown", max_speed: 0 };
+  }, [speedLimits]);
+
+  const limit = { kmh: maxSpeedInfo.max_speed, zone: maxSpeedInfo.name || "Unknown Zone" };
+  
+  // Real restrictions would come from backend too, keeping simple for now
+  const restrictions: string[] = [];
+  if (speedLimits?.some(s => s.name.includes("Expressway"))) restrictions.push("Tolls may apply on Expressway");
+  if (mode === "transit") restrictions.push("Check local transit schedules");
 
   return (
     <Card className="border-0 card-elevated">
@@ -129,6 +145,32 @@ export function RouteDetailsPanel({ routeCoords, mode }: Props) {
                           <span className="text-[9px] text-muted-foreground">★ {v.rating}</span>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {steps && steps.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
+                      <Route className="w-3 h-3" /> Step-by-Step Directions
+                    </p>
+                    <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                      {steps.map((s, idx) => {
+                        const Icon = s.maneuver === "arrive" ? Flag : 
+                                     s.modifier?.includes("left") ? CornerUpLeft : 
+                                     s.modifier?.includes("right") ? CornerUpRight : ArrowUp;
+                        return (
+                          <div key={idx} className="flex items-start gap-2.5 p-2 rounded-lg bg-muted/50">
+                            <div className="w-6 h-6 rounded-md bg-background flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <Icon className="w-3.5 h-3.5 text-primary" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-semibold leading-snug">{s.instruction}</p>
+                              <p className="text-[9px] text-muted-foreground mt-0.5">{formatDistance(s.distance)}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

@@ -1,13 +1,11 @@
-// Full-screen video call overlay. Renders remote stream large + local PiP.
 import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mic, MicOff, Video as VideoIcon, VideoOff, PhoneOff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useVideoCall } from "@/hooks/useVideoCall";
+import { UseVideoCallReturn } from "@/hooks/useVideoCall";
 
 interface VideoCallOverlayProps {
-  conversationId: string;
-  localUserId: string;
+  call: UseVideoCallReturn;
   remoteUserId: string;
   remoteName: string;
   remoteAvatar: string;
@@ -22,9 +20,8 @@ function formatDuration(s: number) {
 }
 
 export function VideoCallOverlay({
-  conversationId, localUserId, remoteUserId, remoteName, remoteAvatar, onClose, autoStart,
+  call, remoteUserId, remoteName, remoteAvatar, onClose, autoStart,
 }: VideoCallOverlayProps) {
-  const call = useVideoCall(conversationId, localUserId, "video");
   const localRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
   const started = useRef(false);
@@ -32,7 +29,7 @@ export function VideoCallOverlay({
   useEffect(() => {
     if (autoStart && !started.current && call.callStatus === "idle") {
       started.current = true;
-      void call.initiateCall(remoteUserId);
+      void call.initiateCall(remoteUserId, "video");
     }
   }, [autoStart, call, remoteUserId]);
 
@@ -115,8 +112,7 @@ export function VideoCallOverlay({
 }
 
 interface VoiceCallOverlayProps {
-  conversationId: string;
-  localUserId: string;
+  call: UseVideoCallReturn;
   remoteUserId: string;
   remoteName: string;
   remoteAvatar: string;
@@ -124,19 +120,17 @@ interface VoiceCallOverlayProps {
   autoStart?: boolean;
 }
 
-// Voice-only overlay — same flow, no video surfaces. Uses useVideoCall in audio mode
-// directly to share state and avoid double-mounting the signaling listener.
+// Voice-only overlay — same flow, no video surfaces.
 export function VoiceCallOverlay({
-  conversationId, localUserId, remoteUserId, remoteName, remoteAvatar, onClose, autoStart,
+  call, remoteUserId, remoteName, remoteAvatar, onClose, autoStart,
 }: VoiceCallOverlayProps) {
-  const call = useVideoCall(conversationId, localUserId, "audio");
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const started = useRef(false);
 
   useEffect(() => {
     if (autoStart && !started.current && call.callStatus === "idle") {
       started.current = true;
-      void call.initiateCall(remoteUserId);
+      void call.initiateCall(remoteUserId, "audio");
     }
   }, [autoStart, call, remoteUserId]);
 

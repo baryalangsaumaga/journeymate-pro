@@ -18,7 +18,8 @@ import ReportsPage from "@/components/pages/ReportsPage";
 import SettingsPage from "@/components/pages/SettingsPage";
 import ExpensesPage from "@/components/pages/ExpensesPage";
 import AdminPage from "@/components/pages/AdminPage";
-import NotificationDrawer, { mockNotifications } from "@/components/NotificationDrawer";
+import NotificationDrawer from "@/components/NotificationDrawer";
+import { useNotifications } from "@/hooks/useNotifications";
 import PullToRefresh from "@/components/PullToRefresh";
 import {
   DashboardSkeleton, ItinerarySkeleton, ExploreSkeleton,
@@ -27,6 +28,7 @@ import {
 } from "@/components/SkeletonLoaders";
 import { useT } from "@/i18n/I18nProvider";
 import { useAuth } from "@/auth/AuthProvider";
+import { useTracking } from "@/hooks/useTracking";
 
 type TabId = "home" | "itinerary" | "navigate" | "social" | "explore" | "reviews" | "reports" | "settings" | "expenses" | "admin";
 
@@ -44,6 +46,7 @@ const skeletonMap: Record<string, React.FC> = {
 };
 
 export default function AppShell() {
+  useTracking();
   const { t } = useT();
   const { user, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>("home");
@@ -68,7 +71,7 @@ export default function AppShell() {
     { id: "settings", label: t("menu.settings"), icon: Settings },
   ];
 
-  const unreadCount = mockNotifications.filter(n => !n.read).length;
+  const { unreadCount } = useNotifications();
 
   const navigate = useCallback((tab: string) => {
     setIsLoading(true);
@@ -123,7 +126,7 @@ export default function AppShell() {
   };
 
   // Map page doesn't use pull-to-refresh (it has its own gestures)
-  const usePullToRefresh = activeTab !== "navigate";
+  const usePullToRefresh = activeTab !== "navigate" && activeTab !== "social";
 
   return (
     <div className="flex flex-col h-[100dvh] bg-background overflow-hidden">
@@ -134,13 +137,13 @@ export default function AppShell() {
             <Map className="w-4.5 h-4.5 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="font-display font-bold text-[15px] text-foreground tracking-tight leading-none">TrailSync</h1>
+            <h1 className="font-display font-bold text-[15px] text-foreground tracking-tight leading-none">Intellitravel</h1>
             <p className="text-[9px] text-muted-foreground leading-none mt-0.5">{t("app.tagline")}</p>
           </div>
         </div>
         <div className="flex items-center gap-0.5">
-          <Badge 
-            variant="outline" 
+          <Badge
+            variant="outline"
             className={`text-[9px] h-[22px] gap-1 border-0 ${isOffline ? "bg-warning/10 text-warning" : "bg-success/10 text-success"}`}
           >
             {isOffline ? <WifiOff className="w-2.5 h-2.5" /> : <Wifi className="w-2.5 h-2.5" />}
@@ -175,7 +178,7 @@ export default function AppShell() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.15, ease: [0.25, 0.1, 0.25, 1] }}
-                className="min-h-full"
+                className="flex-1 flex flex-col min-h-full"
               >
                 {renderPage()}
               </motion.div>
@@ -189,7 +192,7 @@ export default function AppShell() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.15, ease: [0.25, 0.1, 0.25, 1] }}
-              className="h-full"
+              className="h-full flex flex-col"
             >
               {renderPage()}
             </motion.div>
@@ -234,7 +237,7 @@ export default function AppShell() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="fixed inset-0 bg-foreground/30 backdrop-blur-md z-[60]"
+              className="fixed inset-0 bg-foreground/30 backdrop-blur-md z-[500]"
               onClick={() => setMenuOpen(false)}
             />
             <motion.div
@@ -242,7 +245,7 @@ export default function AppShell() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", stiffness: 400, damping: 35 }}
-              className="fixed right-0 top-0 bottom-0 w-[280px] glass-ultra z-[70] flex flex-col border-l border-border/30"
+              className="fixed right-0 top-0 bottom-0 w-[280px] glass-ultra z-[510] flex flex-col border-l border-border/30"
             >
               <div className="flex items-center justify-between p-4 pt-[calc(env(safe-area-inset-top,0px)+16px)]">
                 <span className="font-display font-bold text-base">Menu</span>
@@ -264,14 +267,16 @@ export default function AppShell() {
                 {/* XP Progress */}
                 <div className="mt-3 space-y-1">
                   <div className="flex items-center justify-between text-[9px]">
-                    <span className="text-muted-foreground font-medium">Next: Level 13</span>
-                    <span className="font-semibold text-primary">2,450 / 3,000 XP</span>
+                    <span className="text-muted-foreground font-medium">Next: Level {(user?.stats?.level || 1) + 1}</span>
+                    <span className="font-semibold text-primary">
+                      {Intl.NumberFormat("en-US").format(user?.stats?.current_xp || 0)} / {Intl.NumberFormat("en-US").format(user?.stats?.next_level_xp || 1000)} XP
+                    </span>
                   </div>
                   <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                     <motion.div
                       className="h-full bg-gradient-to-r from-primary to-accent rounded-full"
                       initial={{ width: 0 }}
-                      animate={{ width: "82%" }}
+                      animate={{ width: `${Math.min(100, Math.max(0, ((user?.stats?.current_xp || 0) / (user?.stats?.next_level_xp || 1000)) * 100))}%` }}
                       transition={{ delay: 0.3, duration: 0.8, ease: "easeOut" }}
                     />
                   </div>
@@ -281,9 +286,9 @@ export default function AppShell() {
               {/* Stats Row */}
               <div className="mx-4 mb-4 grid grid-cols-3 gap-2">
                 {[
-                  { label: "Trips", value: "7", icon: Compass },
-                  { label: "Reviews", value: "4", icon: Star },
-                  { label: "Saved", value: "12", icon: Heart },
+                  { label: "Trips", value: user?.stats?.trips || 0, icon: Compass },
+                  { label: "Reviews", value: user?.stats?.reviews || 0, icon: Star },
+                  { label: "Saved", value: user?.stats?.saved || 0, icon: Heart },
                 ].map(({ label, value, icon: Icon }) => (
                   <div key={label} className="text-center p-2.5 rounded-xl bg-muted">
                     <Icon className="w-3.5 h-3.5 mx-auto mb-1 text-muted-foreground" />
@@ -298,9 +303,8 @@ export default function AppShell() {
                   <button
                     key={id}
                     onClick={() => { navigate(id); setMenuOpen(false); }}
-                    className={`flex items-center gap-3 w-full px-3 py-3 rounded-xl text-sm font-medium transition-all tap-highlight ${
-                      activeTab === id ? "text-primary bg-primary/8" : "text-foreground hover:bg-muted"
-                    }`}
+                    className={`flex items-center gap-3 w-full px-3 py-3 rounded-xl text-sm font-medium transition-all tap-highlight ${activeTab === id ? "text-primary bg-primary/8" : "text-foreground hover:bg-muted"
+                      }`}
                   >
                     <Icon className="w-[18px] h-[18px]" />
                     <span className="flex-1 text-left">{label}</span>
