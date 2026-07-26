@@ -157,7 +157,7 @@ export function VoiceCallOverlay({
       <div className="w-full h-full md:w-[380px] md:h-auto md:max-h-[85vh] md:rounded-3xl overflow-hidden flex flex-col items-center justify-between py-12 md:py-10 md:shadow-2xl md:ring-1 md:ring-white/10 relative bg-gradient-to-b from-primary/90 via-primary to-primary/80 text-primary-foreground">
       <audio ref={remoteAudioRef} autoPlay />
 
-      <div className="flex flex-col items-center gap-4 mt-12">
+      <div className="flex flex-col items-center gap-4 mt-12 md:mt-2">
         <p className="text-sm uppercase tracking-widest text-primary-foreground/70 font-medium">
           {call.callStatus === "calling" ? "Calling" :
            call.callStatus === "ringing" ? "Incoming call" :
