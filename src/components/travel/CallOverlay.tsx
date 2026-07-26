@@ -78,11 +78,12 @@ export function VideoCallOverlay({
 
         {call.localStream && (
           <video ref={localRef} autoPlay playsInline muted
-            className="absolute bottom-32 right-4 w-28 h-40 rounded-2xl object-cover ring-2 ring-white/20 bg-black" />
+            className="absolute bottom-32 right-4 w-28 h-40 md:bottom-4 md:w-40 md:h-28 rounded-2xl object-cover ring-2 ring-white/20 bg-black" />
         )}
       </div>
 
-      <div className="px-6 py-6 bg-zinc-950 flex items-center justify-center gap-3">
+      <div className="px-6 py-6 md:py-4 bg-zinc-950 flex items-center justify-center gap-3">
+
         {call.callStatus === "ringing" ? (
           <>
             <Button size="icon" variant="destructive" className="h-14 w-14 rounded-full" onClick={call.rejectIncomingCall}>
