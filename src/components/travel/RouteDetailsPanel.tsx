@@ -122,7 +122,7 @@ export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps }: Pro
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
                       <Fuel className="w-3 h-3" /> Gas Stops Along Route
                     </p>
-                    <div className="space-y-1">
+                    <div className="space-y-1 max-h-40 overflow-y-auto pr-1 overscroll-contain">
                       {fuelStops.map(f => (
                         <div key={f.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
                           <span className="text-[11px] font-semibold truncate">{f.name}</span>
@@ -138,7 +138,7 @@ export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps }: Pro
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
                       <Eye className="w-3 h-3" /> Scenic Viewpoints
                     </p>
-                    <div className="space-y-1">
+                    <div className="space-y-1 max-h-40 overflow-y-auto pr-1 overscroll-contain">
                       {viewpoints.map(v => (
                         <div key={v.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
                           <span className="text-[11px] font-semibold truncate">{v.name}</span>
