@@ -50,11 +50,12 @@ export function VideoCallOverlay({
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[1000] bg-zinc-950/95 backdrop-blur-md flex flex-col md:items-center md:justify-center"
+      className="fixed inset-0 z-[1000] bg-zinc-950/80 backdrop-blur-md flex flex-col md:items-center md:justify-center md:p-8"
     >
-      <div className="w-full h-full md:w-[400px] md:h-[750px] md:max-h-[90vh] md:rounded-[2.5rem] overflow-hidden bg-zinc-950 flex flex-col md:shadow-2xl md:ring-1 md:ring-white/10 relative">
-        <div className="flex-1 relative">
+      <div className="w-full h-full md:w-auto md:h-auto md:max-w-[900px] md:max-h-[85vh] md:aspect-video md:rounded-3xl overflow-hidden bg-zinc-950 flex flex-col md:shadow-2xl md:ring-1 md:ring-white/10 relative">
+        <div className="flex-1 relative min-h-0">
         <video ref={remoteRef} autoPlay playsInline className="w-full h-full object-cover bg-zinc-900" />
+
         {(!call.remoteStream || call.callStatus !== "active") && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-zinc-900/80">
             <img src={remoteAvatar} alt={remoteName} className="w-24 h-24 rounded-2xl ring-4 ring-white/10" />
