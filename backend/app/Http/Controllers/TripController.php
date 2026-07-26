@@ -65,7 +65,7 @@ class TripController extends Controller
         $trip = Trip::with(['itineraries', 'users', 'owner'])->findOrFail($id);
 
         $isCollaborator = $trip->user_id === $request->user()->id || 
-            $trip->users()->where('user_id', $request->user()->id)->where('status', 'accepted')->exists();
+            $trip->users()->where('trip_user.user_id', $request->user()->id)->where('trip_user.status', 'accepted')->exists();
 
         if (!$isCollaborator) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -137,7 +137,7 @@ class TripController extends Controller
         $trip = Trip::findOrFail($id);
         
         $isCollaborator = $trip->user_id === $request->user()->id || 
-            $trip->users()->where('user_id', $request->user()->id)->where('status', 'accepted')->exists();
+            $trip->users()->where('trip_user.user_id', $request->user()->id)->where('trip_user.status', 'accepted')->exists();
 
         if (!$isCollaborator) {
             return response()->json(['message' => 'Unauthorized'], 403);

@@ -45,7 +45,7 @@ class ItineraryController extends Controller
         
         // Authorization check (ensure user owns trip or is accepted collaborator)
         $isCollaborator = $trip->user_id === $request->user()->id || 
-            $trip->users()->where('user_id', $request->user()->id)->where('status', 'accepted')->exists();
+            $trip->users()->where('trip_user.user_id', $request->user()->id)->where('trip_user.status', 'accepted')->exists();
 
         if (!$isCollaborator) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -104,7 +104,7 @@ class ItineraryController extends Controller
         
         // Authorization check (ensure user owns trip or is accepted collaborator)
         $isCollaborator = $trip->user_id === $request->user()->id || 
-            $trip->users()->where('user_id', $request->user()->id)->where('status', 'accepted')->exists();
+            $trip->users()->where('trip_user.user_id', $request->user()->id)->where('trip_user.status', 'accepted')->exists();
 
         if (!$isCollaborator) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -145,7 +145,7 @@ class ItineraryController extends Controller
         $user = request()->user();
         
         $isCollaborator = $trip->user_id === $user->id || 
-            $trip->users()->where('user_id', $user->id)->where('status', 'accepted')->exists();
+            $trip->users()->where('trip_user.user_id', $user->id)->where('trip_user.status', 'accepted')->exists();
 
         if (!$isCollaborator) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -347,7 +347,7 @@ class ItineraryController extends Controller
         
         // Authorization check
         $isCollaborator = $trip->user_id === $request->user()->id || 
-            $trip->users()->where('user_id', $request->user()->id)->where('status', 'accepted')->exists();
+            $trip->users()->where('trip_user.user_id', $request->user()->id)->where('trip_user.status', 'accepted')->exists();
 
         if (!$isCollaborator) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -409,7 +409,7 @@ class ItineraryController extends Controller
         
         // Authorization check
         $isCollaborator = $trip->user_id === $request->user()->id || 
-            $trip->users()->where('user_id', $request->user()->id)->where('status', 'accepted')->exists();
+            $trip->users()->where('trip_user.user_id', $request->user()->id)->where('trip_user.status', 'accepted')->exists();
 
         if (!$isCollaborator) {
             return response()->json(['message' => 'Unauthorized'], 403);
