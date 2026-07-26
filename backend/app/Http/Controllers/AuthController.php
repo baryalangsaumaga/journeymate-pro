@@ -100,14 +100,15 @@ class AuthController extends Controller
             $token = $user->createToken('auth_token')->plainTextToken;
             $user->setAttribute('stats', $user->calculateStats());
 
-            $frontendUrl = env('FRONTEND_URL', 'http://localhost:8080');
+            $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:8080'), '/');
 
             return redirect("{$frontendUrl}/auth/callback?token={$token}");
 
         } catch (\Exception $e) {
-            $frontendUrl = env('FRONTEND_URL', 'http://localhost:8080');
+            \Illuminate\Support\Facades\Log::error('Google Login Error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:8080'), '/');
 
-            return redirect("{$frontendUrl}/login?error=Google login failed");
+            return redirect("{$frontendUrl}/login?error=" . urlencode("Google login failed: " . $e->getMessage()));
         }
     }
 }
