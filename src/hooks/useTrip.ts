@@ -247,6 +247,16 @@ export function useTrip(initialId?: string) {
     },
   });
 
+  const { mutateAsync: optimizeRouteMutation, isPending: isOptimizing } = useMutation({
+    mutationFn: async ({ id, lat, lng }: { id: string; lat: number; lng: number }) => {
+      await itinerariesApi.rearrange(id, lat, lng);
+      await itinerariesApi.calculateRoute(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trips'] });
+    },
+  });
+
   const upsert = useCallback(async (trip: Trip) => {
     return upsertMutation(trip);
   }, [upsertMutation]);
@@ -254,6 +264,10 @@ export function useTrip(initialId?: string) {
   const remove = useCallback(async (id: string) => {
     return removeMutation(id);
   }, [removeMutation]);
+
+  const optimizeRoute = useCallback(async (id: string, lat: number, lng: number) => {
+    return optimizeRouteMutation({ id, lat, lng });
+  }, [optimizeRouteMutation]);
 
   const setActiveIdSafe = useCallback((id: string) => {
     setActiveId(id);
@@ -265,6 +279,8 @@ export function useTrip(initialId?: string) {
     setActiveId: setActiveIdSafe, 
     upsert, 
     remove, 
+    optimizeRoute,
+    isOptimizing,
     isLoading: isLoadingTrips || isLoadingStops 
   };
 }
