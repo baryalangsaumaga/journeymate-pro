@@ -117,35 +117,39 @@ export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps }: Pro
                   </ul>
                 )}
 
-                {fuelStops.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
-                      <Fuel className="w-3 h-3" /> Gas Stops Along Route
-                    </p>
-                    <div className="space-y-1 max-h-40 overflow-y-auto pr-1 overscroll-contain">
-                      {fuelStops.map(f => (
-                        <div key={f.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
-                          <span className="text-[11px] font-semibold truncate">{f.name}</span>
-                          <span className="text-[9px] text-muted-foreground">★ {f.rating}</span>
+                {(fuelStops.length > 0 || viewpoints.length > 0) && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {fuelStops.length > 0 && (
+                      <div className={viewpoints.length === 0 ? "col-span-2" : ""}>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
+                          <Fuel className="w-3 h-3" /> Gas Stops Along Route
+                        </p>
+                        <div className="space-y-1 max-h-40 overflow-y-auto pr-1 overscroll-contain">
+                          {fuelStops.map((f: any) => (
+                            <div key={f.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                              <span className="text-[11px] font-semibold truncate">{f.name}</span>
+                              <span className="text-[9px] text-muted-foreground whitespace-nowrap ml-2">★ {f.rating}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                      </div>
+                    )}
 
-                {viewpoints.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
-                      <Eye className="w-3 h-3" /> Scenic Viewpoints
-                    </p>
-                    <div className="space-y-1 max-h-40 overflow-y-auto pr-1 overscroll-contain">
-                      {viewpoints.map(v => (
-                        <div key={v.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
-                          <span className="text-[11px] font-semibold truncate">{v.name}</span>
-                          <span className="text-[9px] text-muted-foreground">★ {v.rating}</span>
+                    {viewpoints.length > 0 && (
+                      <div className={fuelStops.length === 0 ? "col-span-2" : ""}>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
+                          <Eye className="w-3 h-3" /> Scenic Viewpoints
+                        </p>
+                        <div className="space-y-1 max-h-40 overflow-y-auto pr-1 overscroll-contain">
+                          {viewpoints.map((v: any) => (
+                            <div key={v.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                              <span className="text-[11px] font-semibold truncate">{v.name}</span>
+                              <span className="text-[9px] text-muted-foreground whitespace-nowrap ml-2">★ {v.rating}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

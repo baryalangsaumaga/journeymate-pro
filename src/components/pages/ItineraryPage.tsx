@@ -292,8 +292,13 @@ export default function ItineraryPage() {
       toast({ title: "Need at least 2 stops to optimize" });
       return;
     }
-    const centerLat = fix?.lat ?? selectedTrip.stops[0].location.lat;
-    const centerLng = fix?.lng ?? selectedTrip.stops[0].location.lng;
+    if (!fix) {
+      toast({ title: "Waiting for GPS", description: "Please wait a moment for your location to be found before optimizing.", variant: "destructive" });
+      return;
+    }
+    
+    const centerLat = fix.lat;
+    const centerLng = fix.lng;
     try {
       await optimizeRoute(selectedTrip.id, centerLat, centerLng);
       toast({ title: "✨ Route Optimized", description: "Stops rearranged based on your location." });

@@ -16,10 +16,16 @@ const FALLBACK: GeoFix = {
   lat: 14.5895, lng: 120.9740, heading: null, speed: null, accuracy: 9999, ts: Date.now(),
 };
 
-// Round to 3 decimal places (~111 m precision) so micro-drift is ignored.
-const snap = (v: number) => Math.round(v * 1000) / 1000;
+const MIN_INTERVAL_MS = 500; // Fast enough for smooth navigation
 
-const MIN_INTERVAL_MS = 2000; // ignore fixes closer together than this
+function computeHeading(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const toRad = (deg: number) => deg * Math.PI / 180;
+  const toDeg = (rad: number) => rad * 180 / Math.PI;
+  const dLng = toRad(lng2 - lng1);
+  const y = Math.sin(dLng) * Math.cos(toRad(lat2));
+  const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
 
 export function useGeolocation(enabled = true) {
   const [fix, setFix] = useState<GeoFix | null>(null);
@@ -32,21 +38,32 @@ export function useGeolocation(enabled = true) {
     if (now - lastEmit.current < MIN_INTERVAL_MS) return; // throttle
     lastEmit.current = now;
 
-    const newLat = snap(pos.coords.latitude);
-    const newLng = snap(pos.coords.longitude);
+    const newLat = pos.coords.latitude;
+    const newLng = pos.coords.longitude;
 
     setFix(prev => {
-      // Skip update if snapped coords haven't moved (avoids re-render)
+      // Calculate a synthetic heading if the device doesn't provide a compass heading
+      // and the user has moved at least ~1 meter.
+      let finalHeading = pos.coords.heading;
+      if (finalHeading === null && prev && prev.lat !== newLat && prev.lng !== newLng) {
+         const dist = distanceMeters({lat: prev.lat, lng: prev.lng}, {lat: newLat, lng: newLng});
+         if (dist > 1.0) {
+            finalHeading = computeHeading(prev.lat, prev.lng, newLat, newLng);
+         } else {
+            finalHeading = prev.heading; // retain previous heading if we barely moved
+         }
+      }
+
+      // Skip update if coords haven't moved (avoids re-render)
       if (prev && prev.lat === newLat && prev.lng === newLng) {
-        // Still update speed/heading/accuracy silently — they don't feed query keys
-        if (prev.heading === pos.coords.heading && prev.speed === pos.coords.speed && Math.abs(prev.accuracy - pos.coords.accuracy) < 5) {
-          return prev; // truly identical — no update
+        if (prev.heading === finalHeading && prev.speed === pos.coords.speed && Math.abs(prev.accuracy - pos.coords.accuracy) < 5) {
+          return prev;
         }
-        return { ...prev, heading: pos.coords.heading, speed: pos.coords.speed, accuracy: pos.coords.accuracy, ts: pos.timestamp };
+        return { ...prev, heading: finalHeading, speed: pos.coords.speed, accuracy: pos.coords.accuracy, ts: pos.timestamp };
       }
       return {
         lat: newLat, lng: newLng,
-        heading: pos.coords.heading, speed: pos.coords.speed,
+        heading: finalHeading, speed: pos.coords.speed,
         accuracy: pos.coords.accuracy, ts: pos.timestamp,
       };
     });
