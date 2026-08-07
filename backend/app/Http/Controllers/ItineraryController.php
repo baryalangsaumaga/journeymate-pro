@@ -8,6 +8,7 @@ use App\Services\WeatherService;
 use App\Services\PlaceSearchService;
 use App\Services\RouteService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class ItineraryController extends Controller
 {
@@ -39,6 +40,8 @@ class ItineraryController extends Controller
             'time' => 'nullable|date_format:H:i',
             'duration_minutes' => 'nullable|integer',
             'category' => 'nullable|string',
+            // When true, skip recalculateSchedule — caller will trigger it once after bulk insert.
+            'skip_recalculate' => 'nullable|boolean',
         ]);
 
         $trip = Trip::findOrFail($request->trip_id);
@@ -86,11 +89,13 @@ class ItineraryController extends Controller
             'duration_minutes' => $duration,
             'weather_summary' => $weather['summary'] ?? null,
             'weather_icon' => $weather['icon'] ?? null,
-            // FIX: Ensure this is saved as JSON string if not cast in model
-            'nearby_gas_stations' => json_encode($gasStations), 
+            'nearby_gas_stations' => json_encode($gasStations),
         ]);
 
-        $this->recalculateSchedule($trip);
+        // Only recalculate schedule if not explicitly deferred by the caller (e.g. bulk insert).
+        if (!$request->boolean('skip_recalculate')) {
+            $this->recalculateSchedule($trip);
+        }
         $itinerary->refresh();
 
         return response()->json($itinerary, 201);
@@ -169,49 +174,60 @@ class ItineraryController extends Controller
     // Calculate route for all itinerary items
     public function calculateRoute($tripId)
     {
-        $trip = Trip::findOrFail($tripId);
-        $itineraries = $trip->itineraries()->orderBy('day_number')->orderBy('order')->get();
-
-        if ($itineraries->count() < 2) {
-            return response()->json(['error' => 'Need at least 2 locations'], 400);
+        // Idempotency guard: prevent duplicate concurrent executions for the same trip.
+        // Lock TTL is 60 seconds — sufficient for OSRM + Geoapify calls to complete.
+        $lock = Cache::lock("calculate-route-{$tripId}", 60);
+        if (!$lock->get()) {
+            return response()->json(['message' => 'Route calculation already in progress. Please wait.'], 202);
         }
 
-        // Extract waypoints
-        $waypoints = $itineraries->map(fn($i) => [$i->lat, $i->lng])->toArray();
+        try {
+            $trip = Trip::findOrFail($tripId);
+            $itineraries = $trip->itineraries()->orderBy('day_number')->orderBy('order')->get();
 
-        // Get route alternatives
-        $routeService = new RouteService();
-        $alternatives = $routeService->getRouteAlternatives($waypoints);
-
-        if (empty($alternatives)) {
-            return response()->json(['error' => 'Could not calculate route'], 400);
-        }
-
-        // Update trip with primary route
-        $primaryRoute = reset($alternatives);
-        $trip->update([
-            'route_data' => json_encode($primaryRoute['geometry'] ?? null)
-        ]);
-
-        // Update each itinerary with distance and time from previous
-        $legs = $primaryRoute['legs'] ?? [];
-        foreach ($legs as $index => $leg) {
-            if ($index + 1 < $itineraries->count()) {
-                $itineraries[$index + 1]->update([
-                    'distance_from_previous' => $leg['distance'] / 1000, // Convert to km
-                    'drive_time_from_previous' => intval($leg['duration'] / 60), // Convert to minutes
-                ]);
+            if ($itineraries->count() < 2) {
+                return response()->json(['error' => 'Need at least 2 locations'], 400);
             }
+
+            // Extract waypoints
+            $waypoints = $itineraries->map(fn($i) => [$i->lat, $i->lng])->toArray();
+
+            // Get route alternatives
+            $routeService = new RouteService();
+            $alternatives = $routeService->getRouteAlternatives($waypoints);
+
+            if (empty($alternatives)) {
+                return response()->json(['error' => 'Could not calculate route'], 400);
+            }
+
+            // Update trip with primary route
+            $primaryRoute = reset($alternatives);
+            $trip->update([
+                'route_data' => json_encode($primaryRoute['geometry'] ?? null)
+            ]);
+
+            // Update each itinerary with distance and time from previous
+            $legs = $primaryRoute['legs'] ?? [];
+            foreach ($legs as $index => $leg) {
+                if ($index + 1 < $itineraries->count()) {
+                    $itineraries[$index + 1]->update([
+                        'distance_from_previous' => $leg['distance'] / 1000,
+                        'drive_time_from_previous' => intval($leg['duration'] / 60),
+                    ]);
+                }
+            }
+
+            // Recalculate schedule once at the end
+            $this->recalculateSchedule($trip);
+
+            return response()->json([
+                'trip' => $trip,
+                'itineraries' => $itineraries->map(fn($i) => $i->refresh()),
+                'alternatives' => $alternatives
+            ]);
+        } finally {
+            $lock->release();
         }
-
-        // Recalculate schedule
-        $this->recalculateSchedule($trip);
-
-        return response()->json([
-            'trip' => $trip,
-            'itineraries' => $itineraries->map(fn($i) => $i->refresh()),
-            'alternatives' => $alternatives
-        ]);
     }
 
     // Get route details (speed limits, turns, etc)

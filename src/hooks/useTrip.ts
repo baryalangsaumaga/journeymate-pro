@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { tripsApi, itinerariesApi } from "@/lib/api";
 import { repo } from "@/lib/storage";
@@ -19,6 +19,9 @@ function parseUtcDate(dateStr: string | null | undefined): number {
 export function useTrip(initialId?: string) {
   const queryClient = useQueryClient();
   const [activeId, setActiveId] = useState<string | undefined>(initialId);
+  // Per-instance guard: prevents a double-trigger of calculateRoute (e.g. React Strict Mode or
+  // rapid re-renders) from sending duplicate requests to the backend.
+  const routeCalcInFlight = useRef(false);
 
   // Fetch all trips
   const { data: trips = [], isLoading: isLoadingTrips } = useQuery({
@@ -204,14 +207,21 @@ export function useTrip(initialId?: string) {
               order: i + 1,
               notes: "Added from trip wizard",
               category: dest.type || "",
+              // Skip per-insert recalculation — we'll do one pass at the end via calculateRoute.
+              skip_recalculate: true,
             });
           }
-          
-          try {
-            await itinerariesApi.rearrange(newTrip.id, payload.center_lat, payload.center_lng);
-            await itinerariesApi.calculateRoute(newTrip.id);
-          } catch (err) {
-            console.warn("Could not optimize initial trip route automatically", err);
+
+          if (!routeCalcInFlight.current) {
+            routeCalcInFlight.current = true;
+            try {
+              await itinerariesApi.rearrange(newTrip.id, payload.center_lat, payload.center_lng);
+              await itinerariesApi.calculateRoute(newTrip.id);
+            } catch (err) {
+              console.warn("Could not optimize initial trip route automatically", err);
+            } finally {
+              routeCalcInFlight.current = false;
+            }
           }
         }
         return newTrip;

@@ -58,74 +58,85 @@ function parseRoute(route: any): RouteResult {
 
 import { itinerariesApi } from "@/lib/api";
 
+// Deduplication map: prevents multiple simultaneous route requests for the same
+// start/end/mode from hammering the backend. If a request is already in-flight,
+// new callers share the same Promise instead of firing a new HTTP request.
+const pendingRoutes = new Map<string, Promise<RoutePlan & { speed_limits?: any[] }>>();
+
 export async function fetchRoutePlan(
   start: [number, number],
   end: [number, number],
   mode: Mode = "car"
 ): Promise<RoutePlan & { speed_limits?: any[] }> {
-  try {
-    const res = await itinerariesApi.calculateGeneric({
-      start_lat: start[0],
-      start_lng: start[1],
-      end_lat: end[0],
-      end_lng: end[1],
-      mode
-    });
+  // Build a cache key — round coords to 3dp (~111m) so micro-GPS drift doesn't
+  // create a new request for effectively the same start position.
+  const key = `${start[0].toFixed(3)},${start[1].toFixed(3)}-${end[0].toFixed(3)},${end[1].toFixed(3)}-${mode}`;
 
-    const data = res.data;
-    if (!data.primary) throw new Error("no route");
+  // Return existing in-flight promise if one exists for this exact route+mode.
+  const existing = pendingRoutes.get(key);
+  if (existing) return existing;
 
-    const primary = parseRoute(data.primary);
-    primary.label = "fastest";
-    
-    if (mode === "transit") {
-      // Geoapify provides accurate transit duration, no scaling needed.
-    }
+  const promise = (async () => {
+    try {
+      const res = await itinerariesApi.calculateGeneric({
+        start_lat: start[0],
+        start_lng: start[1],
+        end_lat: end[0],
+        end_lng: end[1],
+        mode
+      });
 
-    const alternates = (data.alternatives || []).map((r: any) => {
+      const data = res.data;
+      if (!data.primary) throw new Error("no route");
+
+      const primary = parseRoute(data.primary);
+      primary.label = "fastest";
+
+      const alternates = (data.alternatives || []).map((r: any) => {
         const parsed = parseRoute(r);
-        if (mode === "transit") {
-          // No scaling needed.
-        }
         const distDelta = parsed.distance - primary.distance;
         const durDelta = parsed.duration - primary.duration;
         let label: RouteLabel = "alternate";
-        
         if (r.is_toll_free) {
-            label = "toll-free";
+          label = "toll-free";
         } else if (distDelta < -100) {
-            label = "shorter";
+          label = "shorter";
         } else if (durDelta > primary.duration * 0.1) {
-            label = "scenic";
+          label = "scenic";
         }
-        
         parsed.label = label;
         return parsed;
-    });
+      });
 
-    return { primary, alternates, speed_limits: data.speed_limits };
-  } catch (err) {
-    console.error("Backend route fetch failed, falling back", err);
-    
-    // Choose realistic speed divisor based on travel mode
-    let speed = 13.9; // driving speed (~50 km/h)
-    if (mode === "walk") speed = 1.4; // walking speed (~5 km/h)
-    else if (mode === "bike") speed = 4.5; // biking speed (~16 km/h)
-    else if (mode === "transit") speed = 6.0; // transit speed (~22 km/h)
+      return { primary, alternates, speed_limits: data.speed_limits };
+    } catch (err) {
+      console.error("Backend route fetch failed, falling back to straight line", err);
 
-    // Fallback straight line — no alternates.
-    const line: RouteResult = {
-      coordinates: [start, end],
-      distance: haversine(start, end),
-      duration: haversine(start, end) / speed,
-      steps: [
-        { instruction: "Head toward destination", distance: haversine(start, end), duration: 0, maneuver: "depart", name: "", location: start },
-        { instruction: "Arrive at destination", distance: 0, duration: 0, maneuver: "arrive", name: "", location: end },
-      ],
-      label: "fastest",
-    };
-    return { primary: line, alternates: [] };
-  }
+      let speed = 13.9;
+      if (mode === "walk") speed = 1.4;
+      else if (mode === "bike") speed = 4.5;
+      else if (mode === "transit") speed = 6.0;
+
+      const dist = haversine(start, end);
+      const line: RouteResult = {
+        coordinates: [start, end],
+        distance: dist,
+        duration: dist / speed,
+        steps: [
+          { instruction: "Head toward destination", distance: dist, duration: 0, maneuver: "depart", name: "", location: start },
+          { instruction: "Arrive at destination", distance: 0, duration: 0, maneuver: "arrive", name: "", location: end },
+        ],
+        label: "fastest",
+      };
+      return { primary: line, alternates: [] };
+    } finally {
+      // Always remove from pending map once resolved or rejected.
+      pendingRoutes.delete(key);
+    }
+  })();
+
+  pendingRoutes.set(key, promise);
+  return promise;
 }
 
 // Back-compat: single-route fetch used by pages that only need the primary path.
