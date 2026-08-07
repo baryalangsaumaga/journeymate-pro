@@ -201,6 +201,9 @@ export default function NavigationPage() {
   useEffect(() => {
     const trip = tripSession.takeTrip();
     if (trip && trip.stops.length > 0) {
+      if (trip.startFrom) {
+        lockedStartRef.current = [trip.startFrom.lat, trip.startFrom.lng];
+      }
       setTripStops(trip.stops.map(s => s.location));
       setDestination(trip.stops[0].location);
       setSearchHidden(true);
@@ -344,8 +347,15 @@ export default function NavigationPage() {
   useEffect(() => {
     if (!destination) { setRoute(null); setAlternates([]); setRouteError(null); return; }
 
-    // Lock the start position for this fetch. Use current GPS if available, else fallback.
-    lockedStartRef.current = userPos ?? [14.5895, 120.9740];
+    // If we don't have a locked start yet (from hand-off) and GPS is still warming up, wait!
+    if (!lockedStartRef.current && !userPos) {
+      return; 
+    }
+
+    // Lock the start position for this fetch. Use current GPS if available.
+    if (!lockedStartRef.current) {
+      lockedStartRef.current = userPos;
+    }
     const frozenStart = lockedStartRef.current;
 
     let cancelled = false;
