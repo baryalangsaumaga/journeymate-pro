@@ -2,6 +2,7 @@ import { useCallback, useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { tripsApi, itinerariesApi } from "@/lib/api";
 import { repo } from "@/lib/storage";
+import { useGeolocation } from "@/hooks/useGeolocation";
 import type { Trip, ItineraryStop, TransitType, WeatherCondition } from "@/types/travel";
 
 function parseUtcDate(dateStr: string | null | undefined): number {
@@ -18,6 +19,7 @@ function parseUtcDate(dateStr: string | null | undefined): number {
 
 export function useTrip(initialId?: string) {
   const queryClient = useQueryClient();
+  const { fix } = useGeolocation();
   const [activeId, setActiveId] = useState<string | undefined>(initialId);
   // Per-instance guard: prevents a double-trigger of calculateRoute (e.g. React Strict Mode or
   // rapid re-renders) from sending duplicate requests to the backend.
@@ -215,7 +217,10 @@ export function useTrip(initialId?: string) {
           if (!routeCalcInFlight.current) {
             routeCalcInFlight.current = true;
             try {
-              await itinerariesApi.rearrange(newTrip.id, payload.center_lat, payload.center_lng);
+              // Rearrange based on user's actual GPS location if available, otherwise fallback
+              const startLat = fix?.lat ?? payload.center_lat;
+              const startLng = fix?.lng ?? payload.center_lng;
+              await itinerariesApi.rearrange(newTrip.id, startLat, startLng);
               await itinerariesApi.calculateRoute(newTrip.id);
             } catch (err) {
               console.warn("Could not optimize initial trip route automatically", err);
