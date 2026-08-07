@@ -52,7 +52,7 @@ type DetailTab = "timeline" | "plan" | "auto";
 
 export default function ItineraryPage() {
   const queryClient = useQueryClient();
-  const { trips, active, setActiveId, remove, upsert, isLoading } = useTrip();
+  const { trips, active, setActiveId, remove, upsert, optimizeRoute, isOptimizing, isLoading } = useTrip();
   const { user } = useAuth();
   const { budget } = useBudget(active?.id || "");
 
@@ -284,6 +284,21 @@ export default function ItineraryPage() {
       toast({ title: "📍 Stop Added", description: place.name });
     } catch (e) {
       toast({ title: "Failed to add stop", variant: "destructive" });
+    }
+  };
+
+  const handleOptimizeRoute = async () => {
+    if (!selectedTrip || !selectedTrip.stops || selectedTrip.stops.length < 2) {
+      toast({ title: "Need at least 2 stops to optimize" });
+      return;
+    }
+    const centerLat = fix?.lat ?? selectedTrip.stops[0].location.lat;
+    const centerLng = fix?.lng ?? selectedTrip.stops[0].location.lng;
+    try {
+      await optimizeRoute(selectedTrip.id, centerLat, centerLng);
+      toast({ title: "✨ Route Optimized", description: "Stops rearranged based on your location." });
+    } catch (e) {
+      toast({ title: "Failed to optimize route", variant: "destructive" });
     }
   };
 
@@ -588,14 +603,29 @@ export default function ItineraryPage() {
               </AnimatePresence>
             </motion.div>
 
-            {/* Add Stop — search input directly inside Timeline (non-disruptive autocomplete). */}
+            {/* Add Stop & Optimize Route */}
             {detailTab === "timeline" && (
-              <motion.div variants={item} className="space-y-2">
-                <PlaceSearchInput
-                  placeholder="Add a stop…"
-                  exclude={selectedTrip.stops?.map(s => s.location.id) || []}
-                  onPick={handleAddStop}
-                />
+              <motion.div variants={item} className="flex gap-2 items-center">
+                <div className="flex-1">
+                  <PlaceSearchInput
+                    placeholder="Add a stop…"
+                    exclude={selectedTrip.stops?.map(s => s.location.id) || []}
+                    onPick={handleAddStop}
+                  />
+                </div>
+                {selectedTrip.stops && selectedTrip.stops.length > 1 && (
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    className="h-[52px] w-[52px] rounded-xl flex-shrink-0 shadow-card-hover border-primary/20 bg-primary/5 text-primary relative overflow-hidden group" 
+                    onClick={handleOptimizeRoute}
+                    disabled={isOptimizing}
+                    title="Optimize route order"
+                  >
+                    <div className="absolute inset-0 bg-primary/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+                    {isOptimizing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5 relative z-10" />}
+                  </Button>
+                )}
               </motion.div>
             )}
 
