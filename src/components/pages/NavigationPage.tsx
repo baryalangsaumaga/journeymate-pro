@@ -98,6 +98,7 @@ export default function NavigationPage() {
   const [speedLimits, setSpeedLimits] = useState<any[]>([]);
   const [selectedAltIdx, setSelectedAltIdx] = useState<number>(0); // 0 = primary
   const [loadingRoute, setLoadingRoute] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
   const [stepIdx, setStepIdx] = useState(0);
   const [destination, setDestination] = useState<Location | null>(null);
   const [tripStops, setTripStops] = useState<Location[]>([]); // multi-leg from "Start the Trip"
@@ -110,6 +111,9 @@ export default function NavigationPage() {
   const [keepTiltOnRecenter, setKeepTiltOnRecenter] = useState(true); // preserve 3D tilt when pressing recenter
   const [keepTiltAfterStop, setKeepTiltAfterStop] = useState(false); // preserve tilt even after navigation stops
   const [manualTilt, setManualTilt] = useState(false); // user-forced tilt when not navigating
+  // Locked start position for route calculation — prevents re-fetch on every GPS tick.
+  // Only updated when a new destination is set or the user explicitly retries.
+  const lockedStartRef = useRef<[number, number] | null>(null);
   const [accuracyThreshold, setAccuracyThreshold] = useState<number>(() => {
     if (typeof window === "undefined") return 40;
     const raw = window.localStorage.getItem("nav.accuracyThreshold");
@@ -334,23 +338,47 @@ export default function NavigationPage() {
     }
   }, [destination?.id]);
 
-  // Fetch route plan (primary + alternates) when destination/mode/userPos changes.
+  // Fetch route plan — only when destination or mode changes, NOT on every GPS update.
+  // We lock the start position at fetch time so GPS drift does not trigger constant re-fetches
+  // which were previously overloading the backend and breaking route display.
   useEffect(() => {
-    if (!destination) { setRoute(null); setAlternates([]); return; }
+    if (!destination) { setRoute(null); setAlternates([]); setRouteError(null); return; }
+
+    // Lock the start position for this fetch. Use current GPS if available, else fallback.
+    lockedStartRef.current = userPos ?? [14.5895, 120.9740];
+    const frozenStart = lockedStartRef.current;
+
     let cancelled = false;
     setLoadingRoute(true);
+    setRouteError(null);
 
-    fetchRoutePlan(startPoint, [destination.lat, destination.lng], selectedMode).then(plan => {
-      if (cancelled) return;
-      setRoute(plan.primary);
-      setAlternates(plan.alternates);
-      setSpeedLimits(plan.speed_limits || []);
-      setSelectedAltIdx(0);
-      setStepIdx(0);
-      setLoadingRoute(false);
-    });
+    fetchRoutePlan(frozenStart, [destination.lat, destination.lng], selectedMode)
+      .then(plan => {
+        if (cancelled) return;
+        // Only accept the result if it has real geometry (more than 2 coords = actual road route)
+        if (plan.primary.coordinates.length < 2) {
+          setRouteError("Could not calculate route. Tap retry or check your connection.");
+          setLoadingRoute(false);
+          return;
+        }
+        setRoute(plan.primary);
+        setAlternates(plan.alternates);
+        setSpeedLimits(plan.speed_limits || []);
+        setSelectedAltIdx(0);
+        setStepIdx(0);
+        setRouteError(null);
+        setLoadingRoute(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRouteError("Route service unavailable. Using straight-line fallback.");
+        setLoadingRoute(false);
+      });
+
     return () => { cancelled = true; };
-  }, [destination?.id, selectedMode, startPoint[0], startPoint[1]]);
+    // Intentionally excludes userPos/startPoint — GPS changes must NOT trigger route re-fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destination?.id, selectedMode]);
 
   // Draw primary + alternate polylines + eateries along the way.
   useEffect(() => {
@@ -539,8 +567,13 @@ export default function NavigationPage() {
   };
 
   const handlePickDestination = (place: Location) => {
+    // Reset the locked start so the new route uses current GPS position.
+    lockedStartRef.current = null;
     setDestination(place);
-    setSearchHidden(true); // hide search so it doesn't disrupt
+    setRoute(null);
+    setAlternates([]);
+    setRouteError(null);
+    setSearchHidden(true);
     toast({ title: "📍 Destination Set", description: place.name });
   };
 
@@ -817,6 +850,30 @@ export default function NavigationPage() {
                 <Card className="border-0 card-interactive">
                   <CardContent className="p-3 text-center text-xs text-muted-foreground">
                     Search a destination above to plan a route.
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Route error state with retry */}
+              {routeError && (
+                <Card className="border-0 border-l-2 border-l-destructive/60 bg-destructive/5">
+                  <CardContent className="p-3 flex items-center gap-2">
+                    <div className="flex-1">
+                      <p className="text-[11px] font-semibold text-destructive">Route Error</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{routeError}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        lockedStartRef.current = null;
+                        setRoute(null);
+                        setRouteError(null);
+                        // Re-trigger by toggling destination (same object, new ref trick)
+                        setDestination(d => d ? { ...d } : d);
+                      }}
+                      className="text-[10px] font-semibold text-primary px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors flex-shrink-0"
+                    >
+                      Retry
+                    </button>
                   </CardContent>
                 </Card>
               )}
