@@ -22,6 +22,7 @@ export interface RouteResult {
   steps: RouteStep[];
   label?: RouteLabel;
   transit_segments?: TransitSegment[];
+  stops?: any[];
 }
 
 export interface RoutePlan {
@@ -61,7 +62,8 @@ function parseRoute(route: any): RouteResult {
     distance: route.distance, 
     duration: route.duration, 
     steps,
-    transit_segments: route.transit_segments ?? undefined
+    transit_segments: route.transit_segments ?? undefined,
+    stops: route.stops ?? undefined,
   };
 }
 

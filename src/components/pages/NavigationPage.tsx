@@ -190,10 +190,18 @@ export default function NavigationPage() {
   const secondaryDestMarkerRef = useRef<L.Marker | null>(null);
   const startMarkerRef = useRef<L.Marker | null>(null);
   const eateryMarkersRef = useRef<L.Marker[]>([]);
+  const stopMarkersRef = useRef<L.Marker[]>([]);
   const accuracyRingRef = useRef<L.Circle | null>(null);
   const headingConeRef = useRef<L.Polygon | null>(null);
   const lastFittedRouteRef = useRef<string | null>(null); // prevents repeated fitBounds
   const hasAutoCentered = useRef(false);
+  const hasBoardedRef = useRef(false);
+  const hasAlightedRef = useRef(false);
+
+  useEffect(() => {
+    hasBoardedRef.current = false;
+    hasAlightedRef.current = false;
+  }, [route?.distance, isNavigating]);
 
   const tileUrls: Record<string, string> = {
     voyager: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -433,13 +441,19 @@ export default function NavigationPage() {
 
     if (destination) {
       destMarkerRef.current = L.marker([destination.lat, destination.lng], { icon: dot("#ef4444", 16) })
-        .bindPopup(`🏁 ${destination.name}`).addTo(map);
+        .addTo(map);
+      destMarkerRef.current.on("click", () => {
+        setSelectedPlace(destination);
+      });
     }
 
     if (tripStops.length > 1 && legIdx < tripStops.length - 1) {
       const finalDest = tripStops[tripStops.length - 1];
       secondaryDestMarkerRef.current = L.marker([finalDest.lat, finalDest.lng], { icon: dot("#6b7280", 14) })
-        .bindPopup(`🏁 ${finalDest.name} (Final Destination)`).addTo(map);
+        .addTo(map);
+      secondaryDestMarkerRef.current.on("click", () => {
+        setSelectedPlace(finalDest);
+      });
     }
   }, [destination?.id, tripStops, legIdx]);
 
@@ -521,6 +535,8 @@ export default function NavigationPage() {
     altPolylinesRef.current = [];
     eateryMarkersRef.current.forEach(m => m.remove());
     eateryMarkersRef.current = [];
+    stopMarkersRef.current.forEach(m => m.remove());
+    stopMarkersRef.current = [];
     if (!route) return;
 
     // Draw secondary route first (underneath everything)
@@ -580,6 +596,82 @@ export default function NavigationPage() {
       eateryMarkersRef.current.push(mk);
     });
 
+    // Draw transit stop markers for commute mode with interactive place sheet click handlers
+    const stopsToRender: any[] = ((route as any).stops && Array.isArray((route as any).stops) && (route as any).stops.length > 0)
+      ? (route as any).stops
+      : (selectedMode === 'transit' && route?.transit_segments && route.transit_segments.length > 0 && route.coordinates?.length > 1)
+      ? (() => {
+          const segs = route.transit_segments;
+          const coords = route.coordinates;
+          const generatedStops: any[] = [];
+          segs.forEach((seg, idx) => {
+            const coordIdx = Math.floor((idx / segs.length) * (coords.length - 1));
+            const pt = coords[coordIdx] || coords[0];
+            generatedStops.push({
+              id: `gen_stop_${idx}_pickup`,
+              name: seg.departureName || `Board ${seg.title || seg.type}`,
+              lat: pt[0],
+              lng: pt[1],
+              type: idx === 0 ? 'pickup' : 'transfer',
+              modes: [seg.type || 'transit'],
+              fare: seg.costEstimate,
+              duration_minutes: seg.durationMinutes,
+              instructions: seg.instructions,
+            });
+            if (idx === segs.length - 1) {
+              const lastPt = coords[coords.length - 1];
+              generatedStops.push({
+                id: `gen_stop_${idx}_dropoff`,
+                name: seg.arrivalName || destination?.name || "Alight / Destination",
+                lat: lastPt[0],
+                lng: lastPt[1],
+                type: 'dropoff',
+                modes: [seg.type || 'transit'],
+                fare: seg.costEstimate,
+                duration_minutes: seg.durationMinutes,
+                instructions: seg.instructions,
+              });
+            }
+          });
+          return generatedStops;
+        })()
+      : [];
+
+    stopsToRender.forEach((stop: any) => {
+      const isPickup = stop.type === 'pickup';
+      const isTransfer = stop.type === 'transfer';
+      const stopBg = isPickup ? "hsl(217, 91%, 60%)" : isTransfer ? "hsl(38, 92%, 50%)" : "hsl(0, 84%, 60%)";
+      
+      const stopHtml = `
+        <div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+          <div style="width:18px;height:18px;border-radius:50%;background:${stopBg};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;">
+            <div style="width:6px;height:6px;border-radius:50%;background:white;"></div>
+          </div>
+          <div style="margin-top:2px;background:rgba(15,23,42,0.88);color:white;font-family:Inter,sans-serif;font-size:9px;font-weight:700;padding:2px 6px;border-radius:6px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;gap:3px;border:1px solid rgba(255,255,255,0.15);">
+            <span style="color:${stopBg};font-size:8px;">●</span> ${stop.name}
+          </div>
+        </div>`;
+      const icon = L.divIcon({ className: "", html: stopHtml, iconSize: [20, 36], iconAnchor: [10, 9] });
+      
+      const mk = L.marker([stop.lat, stop.lng], { icon, zIndexOffset: 800 }).addTo(map);
+      mk.on("click", () => {
+        setSelectedPlace({
+          id: stop.id,
+          name: stop.name,
+          address: stop.instructions || `Transit Stop - ${stop.type.toUpperCase()}`,
+          lat: stop.lat,
+          lng: stop.lng,
+          category: "transit-stop",
+          type: stop.type,
+          modes: stop.modes || [],
+          fare: stop.fare,
+          durationMinutes: stop.duration_minutes,
+          instructions: stop.instructions,
+        } as any);
+      });
+      stopMarkersRef.current.push(mk);
+    });
+
     // Only fit bounds when a genuinely new route loads — not on alt clicks or eatery changes.
     const routeFingerprint = `${route.distance}-${route.duration}-${selectedAltIdx}`;
     if (!isNavigating && activeRoute.coordinates.length > 1 && lastFittedRouteRef.current !== routeFingerprint) {
@@ -623,6 +715,47 @@ export default function NavigationPage() {
       }
     }
 
+    // Automatic Vehicle Boarding & Alighting Detection (Commute Mode)
+    if (selectedMode === "transit") {
+      const speedMps = fix?.speed ?? 0;
+      const speedKmh = Math.round(speedMps * 3.6);
+
+      // Auto-detect vehicle boarding if user is moving > 15 km/h while on step 0 (access walk)
+      if (stepIdx === 0 && !hasBoardedRef.current && speedKmh >= 15) {
+        hasBoardedRef.current = true;
+        const nextIdx = Math.min(1, route.steps.length - 1);
+        setStepIdx(nextIdx);
+        const transitInstr = route.steps[nextIdx]?.instruction || "Boarded transit vehicle. Heading to drop-off stop.";
+        speak(`Vehicle boarding detected at ${speedKmh} kilometers per hour. Proceeding to drop-off stop.`);
+        toast({
+          title: "🚌 Vehicle Boarding Detected!",
+          description: `Speed: ${speedKmh} km/h — Advanced to: ${transitInstr}`,
+        });
+      }
+
+      // Auto-detect alighting when speed drops near the drop-off terminal
+      if (stepIdx > 0 && stepIdx < route.steps.length - 1 && !hasAlightedRef.current) {
+        const dropoffStep = route.steps[route.steps.length - 2] || route.steps[1];
+        if (dropoffStep) {
+          const distToDropoff = distanceMeters(
+            { lat: userPos[0], lng: userPos[1] },
+            { lat: dropoffStep.location[0], lng: dropoffStep.location[1] }
+          );
+          if (distToDropoff < 150 && speedKmh <= 6) {
+            hasAlightedRef.current = true;
+            const egressIdx = route.steps.length - 2;
+            setStepIdx(egressIdx);
+            const egressInstr = route.steps[egressIdx]?.instruction || "Alighted from vehicle. Walk to your destination.";
+            speak(`Alighting detected near drop-off stop. ${egressInstr}`);
+            toast({
+              title: "🚏 Alighting Detected",
+              description: egressInstr,
+            });
+          }
+        }
+      }
+    }
+
     // Arrived?
     const dest = route.coordinates[route.coordinates.length - 1];
     if (distanceMeters({ lat: userPos[0], lng: userPos[1] }, { lat: dest[0], lng: dest[1] }) < 30) {
@@ -639,7 +772,7 @@ export default function NavigationPage() {
         setIsNavigating(false);
       }
     }
-  }, [userPos?.[0], userPos?.[1], isNavigating, route, stepIdx]);
+  }, [userPos?.[0], userPos?.[1], fix?.speed, isNavigating, route, stepIdx, selectedMode]);
 
   // Stop -> clean car marker + voice
   useEffect(() => {
@@ -921,8 +1054,24 @@ export default function NavigationPage() {
             >
               <NavIcon className="w-4 h-4 text-primary flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] text-muted-foreground">Destination</p>
-                <p className="text-xs font-semibold truncate">{destination.name}</p>
+                {selectedMode === "transit" && (route as any)?.stops?.find((s: any) => s.type === "dropoff") ? (
+                  <>
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-orange-400 flex items-center gap-1">
+                      <span>🚏 1st Target (Drop-off)</span>
+                    </p>
+                    <p className="text-xs font-bold truncate text-foreground">
+                      {(route as any).stops.find((s: any) => s.type === "dropoff")?.name}
+                    </p>
+                    <p className="text-[9px] text-muted-foreground truncate">
+                      Then: Walk/Ride to {destination.name}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[10px] text-muted-foreground">Destination</p>
+                    <p className="text-xs font-semibold truncate">{destination.name}</p>
+                  </>
+                )}
               </div>
               {tripStops.length > 0 && (
                 <Badge variant="outline" className="text-[9px] h-5">{legIdx + 1}/{tripStops.length}</Badge>
@@ -1124,9 +1273,16 @@ export default function NavigationPage() {
 
               {destination && (
                 <div className="grid grid-cols-[1fr_auto] gap-2 items-start mt-2">
-                  <div className="min-w-0 pr-2">
-                    <h3 className="font-display font-bold text-[15px] truncate">{destination.name}</h3>
-                    <p className="text-[10px] text-muted-foreground truncate">{destination.address || destination.description || "Unknown address"}</p>
+                  <div 
+                    onClick={() => setSelectedPlace(destination)}
+                    className="min-w-0 pr-2 cursor-pointer group"
+                    title="Tap to view place details"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="font-display font-bold text-[15px] truncate group-hover:text-primary transition-colors">{destination.name}</h3>
+                      <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-primary/5 text-primary border-primary/20 flex-shrink-0 font-medium group-hover:bg-primary group-hover:text-primary-foreground transition-colors">Details</Badge>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground truncate group-hover:text-foreground transition-colors">{destination.address || destination.description || "Unknown address"}</p>
                     {tripStops.length > 0 && legIdx < tripStops.length - 1 && (
                       <p className="text-[11px] font-semibold text-indigo-500 mt-1 flex items-center gap-1">
                         <Map className="w-3 h-3" /> Side Trip — Then to: {tripStops[tripStops.length - 1].name}
@@ -1150,34 +1306,52 @@ export default function NavigationPage() {
                 </div>
               )}
 
-              {/* Commute Mode customization bar — active when mode is transit */}
+              {/* Post-Alighting guidance — active when mode is transit */}
               {selectedMode === "transit" && destination && (
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-primary/5 border border-primary/20 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">🚌</span>
-                    <div>
-                      <p className="font-bold text-[11px] text-primary">Public Commute Mode</p>
-                      <p className="text-[9px] text-muted-foreground">
-                        {route?.transit_segments?.length 
-                          ? `${route.transit_segments.length} custom / GTFS transit legs` 
-                          : "Scheduled GTFS & local transit legs"}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setShowTransitEditor(true)}
-                    className="h-7 text-[10px] gap-1 font-semibold border-primary/30 text-primary hover:bg-primary/10"
-                  >
-                    <Plus className="w-3 h-3" /> Custom Legs
-                  </Button>
+                <div className="space-y-2">
+                  {(() => {
+                    const dropoffStop = (route as any)?.stops?.find((s: any) => s.type === "dropoff");
+                    const egressSeg = route?.transit_segments?.find(s => s.id === "egress_seg_1" || s.type === "walk" || s.type === "tricycle");
+                    return (
+                      <div className="p-2.5 rounded-xl bg-orange-500/10 border border-orange-500/30 text-xs space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">🚏</span>
+                            <div>
+                              <p className="font-bold text-[11px] text-orange-400">1st Target: Alight at Drop-off Stop</p>
+                              <p className="text-[10px] font-semibold text-foreground">
+                                {dropoffStop?.name || route?.transit_segments?.[route.transit_segments.length - 2]?.arrivalName || "Admin Drop-off Terminal"}
+                              </p>
+                            </div>
+                          </div>
+                          <Badge className="bg-orange-500 text-white text-[9px] font-bold border-0">
+                            1st Drop-off
+                          </Badge>
+                        </div>
+
+                        <div className="flex items-center gap-2 p-2 rounded-lg bg-card/80 border border-border/50 text-[10px] font-medium">
+                          <span className="text-muted-foreground">What to do next:</span>
+                          <span className="text-foreground font-semibold flex-1 truncate">
+                            {egressSeg?.instructions || `Alight at drop-off stop and walk/ride to ${destination.name}`}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
               {destination && (
-                <RouteDetailsPanel routeCoords={route?.coordinates} mode={selectedMode} speedLimits={speedLimits} steps={route?.steps} transitSegments={route?.transit_segments} onSelectPlace={setSelectedPlace} />
+                <RouteDetailsPanel
+                  routeCoords={route?.coordinates}
+                  mode={selectedMode}
+                  speedLimits={speedLimits}
+                  steps={route?.steps}
+                  transitSegments={route?.transit_segments}
+                  isAdminRoute={(route as any)?.is_admin_route}
+                  adminTitle={(route as any)?.admin_title}
+                  onSelectPlace={setSelectedPlace}
+                />
               )}
 
             </motion.div>

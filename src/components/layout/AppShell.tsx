@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Map, Compass, Users, Star, FileText, Settings, Home, Navigation,
   Search, Bell, User, Menu, X, Wifi, WifiOff, Download, DollarSign,
-  Sparkles, Heart, Database
+  Sparkles, Heart, Database, LogOut
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +54,7 @@ export default function AppShell() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [isOffline] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
 
   const tabs = [
     { id: "home" as const, label: t("nav.home"), icon: Home },
@@ -67,7 +68,7 @@ export default function AppShell() {
     { id: "expenses", label: t("menu.expenses"), icon: DollarSign, badge: "New" },
     { id: "reviews", label: t("menu.reviews"), icon: Star },
     { id: "reports", label: t("menu.reports"), icon: FileText },
-    { id: "admin", label: t("menu.admin"), icon: Database },
+    ...(user?.is_admin ? [{ id: "admin", label: t("menu.admin"), icon: Database }] : []),
     { id: "settings", label: t("menu.settings"), icon: Settings },
   ];
 
@@ -98,7 +99,19 @@ export default function AppShell() {
       const Skeleton = skeletonMap[activeTab] || DashboardSkeleton;
       return <Skeleton />;
     }
-    if (user?.guest && (activeTab === "admin" || activeTab === "reports")) {
+    if (activeTab === "admin" && !user?.is_admin) {
+      return (
+        <div className="px-4 py-12 text-center">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-destructive/10 flex items-center justify-center mb-3">
+            <User className="w-7 h-7 text-destructive" />
+          </div>
+          <h3 className="font-display font-bold text-base">Admin Access Only</h3>
+          <p className="text-[11px] text-muted-foreground mt-1 mb-4">The CMS is restricted to administrator accounts.</p>
+          <Button onClick={() => setActiveTab("home")} className="rounded-xl">Back to Home</Button>
+        </div>
+      );
+    }
+    if (user?.guest && activeTab === "reports") {
       return (
         <div className="px-4 py-12 text-center">
           <div className="w-14 h-14 mx-auto rounded-2xl bg-muted flex items-center justify-center mb-3">
@@ -128,6 +141,46 @@ export default function AppShell() {
   // Map page doesn't use pull-to-refresh (it has its own gestures)
   const usePullToRefresh = activeTab !== "navigate" && activeTab !== "social";
 
+  // Standalone Admin Portal View for Admin Accounts
+  if (user?.is_admin) {
+    return (
+      <div className="flex flex-col h-[100dvh] bg-background overflow-hidden">
+        {/* Admin Header */}
+        <header className="safe-top flex items-center justify-between px-4 py-3 glass-ultra border-b border-border/30 z-50">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-travel">
+              <Database className="w-5 h-5 text-primary-foreground" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-display font-bold text-[15px] text-foreground tracking-tight leading-none">Intellitravel Admin</h1>
+                <Badge className="bg-primary text-primary-foreground text-[9px] font-bold border-0 px-1.5 py-0.5">ADMIN</Badge>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-none mt-0.5">Transit & Content Management System</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-9 w-9 rounded-xl text-foreground hover:bg-muted"
+              onClick={() => setAdminDrawerOpen(true)}
+            >
+              <Menu className="w-5 h-5" />
+            </Button>
+          </div>
+        </header>
+
+        {/* Main Admin Workspace (Full Screen AdminPage with Map Plotter & CMS) */}
+        <main className="flex-1 overflow-y-auto">
+          <AdminPage drawerOpen={adminDrawerOpen} setDrawerOpen={setAdminDrawerOpen} />
+        </main>
+      </div>
+    );
+  }
+
+  // Regular User AppShell Below
   return (
     <div className="flex flex-col h-[100dvh] bg-background overflow-hidden">
       {/* Status Bar */}

@@ -14,10 +14,12 @@ interface Props {
   speedLimits?: { name: string; max_speed: number }[];
   steps?: RouteStep[];
   transitSegments?: TransitSegment[];
+  isAdminRoute?: boolean;
+  adminTitle?: string;
   onSelectPlace?: (place: any) => void;
 }
 
-export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps, transitSegments, onSelectPlace }: Props) {
+export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps, transitSegments, isAdminRoute, adminTitle, onSelectPlace }: Props) {
   const [open, setOpen] = useState(false);
 
   const { data: fuelStops = [] } = useQuery({
@@ -78,9 +80,14 @@ export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps, trans
           onClick={() => setOpen(v => !v)}
           className="w-full flex items-center justify-between p-3 tap-highlight"
         >
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Receipt className="w-4 h-4 text-primary" />
             <span className="text-xs font-semibold">Route Details</span>
+            {isAdminRoute && (
+              <Badge className="bg-emerald-600 text-white font-bold text-[9px] gap-1 border-0">
+                ✨ Admin Verified Commute Route
+              </Badge>
+            )}
             <Badge variant="outline" className="text-[9px] h-5 font-semibold border-primary/20 text-primary">
               {mode === "transit" 
                 ? (transitSegments?.length ? `${transitSegments.length} transit legs` : "Public Commute") 

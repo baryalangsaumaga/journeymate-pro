@@ -16,11 +16,16 @@ use App\Http\Controllers\LocationController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CurrencyController;
+use App\Http\Controllers\AdminTransitController;
+use App\Http\Middleware\EnsureAdmin;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::get('/auth/google', [AuthController::class, 'googleRedirect']);
 Route::get('/auth/google/callback', [AuthController::class, 'googleCallback']);
+
+// Transit Route Matching (Public or Authenticated)
+Route::match(['get', 'post'], '/transit-routes/match', [AdminTransitController::class, 'matchRoute']);
 
 use Illuminate\Support\Facades\Broadcast;
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
@@ -30,6 +35,11 @@ Route::get('/currency/rates', [CurrencyController::class, 'latest']);
 
 // Public photo proxy for img src tags
 Route::get('/places/photo', [PlaceController::class, 'photo']);
+
+// Admin Protected Routes
+Route::middleware(['auth:sanctum', EnsureAdmin::class])->group(function () {
+    Route::apiResource('admin/transit-routes', AdminTransitController::class);
+});
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
