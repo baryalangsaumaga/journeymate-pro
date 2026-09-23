@@ -218,4 +218,20 @@ export const callSignalApi = {
     api.get(`/calls/signals?t=${Date.now()}`),
 };
 
+// Transit Network Graph API (Nodes & Edges)
+export const transitStopsApi = {
+  getAllStops: () => api.get('/transit-stops'),
+  getNearbyStops: (lat: number, lng: number, radius: number = 5000) => api.get('/transit-stops/nearby', { params: { lat, lng, radius } }),
+  createStop: (data: any) => api.post('/admin/transit-stops', data),
+  updateStop: (id: string | number, data: any) => api.put(`/admin/transit-stops/${id}`, data),
+  deleteStop: (id: string | number) => api.delete(`/admin/transit-stops/${id}`),
+
+  getAllConnections: () => api.get('/transit-connections'),
+  createConnection: (data: any) => api.post('/admin/transit-connections', data),
+  updateConnection: (id: string | number, data: any) => api.put(`/admin/transit-connections/${id}`, data),
+  deleteConnection: (id: string | number) => api.delete(`/admin/transit-connections/${id}`),
+
+  importLocalStorageHubs: (hubs: any[]) => api.post('/admin/transit-hubs/import', { hubs }),
+};
+
 export default api;

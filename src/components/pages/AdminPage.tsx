@@ -15,10 +15,11 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/auth/AuthProvider";
 import AdminTransitPlotter from "@/components/admin/AdminTransitPlotter";
+import AdminStopNetworkPlotter from "@/components/admin/AdminStopNetworkPlotter";
 import HubMapPickerModal from "@/components/admin/HubMapPickerModal";
 import RoutePreviewModal from "@/components/admin/RoutePreviewModal";
 
-type ViewMode = "plotter" | "routes" | "fares" | "hubs" | "advisories";
+type ViewMode = "network" | "plotter" | "routes" | "fares" | "hubs" | "advisories";
 
 interface FareConfig {
   id: string;
@@ -125,7 +126,7 @@ export default function AdminPage({ drawerOpen: externalDrawerOpen, setDrawerOpe
   const [internalDrawerOpen, setInternalDrawerOpen] = useState(false);
   const drawerOpen = externalDrawerOpen !== undefined ? externalDrawerOpen : internalDrawerOpen;
   const setDrawerOpen = externalSetDrawerOpen || setInternalDrawerOpen;
-  const [currentView, setCurrentView] = useState<ViewMode>("plotter");
+  const [currentView, setCurrentView] = useState<ViewMode>("network");
   const [dbRoutes, setDbRoutes] = useState<any[]>([]);
   const [isLoadingRoutes, setIsLoadingRoutes] = useState(false);
   const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
@@ -361,12 +362,21 @@ export default function AdminPage({ drawerOpen: externalDrawerOpen, setDrawerOpe
 
             <div className="space-y-1">
               <button
+                onClick={() => { setCurrentView("network"); setDrawerOpen(false); }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
+                  currentView === "network" ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-muted"
+                }`}
+              >
+                <Compass className="w-4 h-4 text-amber-400" /> Stop Network Graph Plotter
+              </button>
+
+              <button
                 onClick={() => { setCurrentView("plotter"); setDrawerOpen(false); }}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
                   currentView === "plotter" ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-muted"
                 }`}
               >
-                <Map className="w-4 h-4" /> Interactive Transit Plotter
+                <Map className="w-4 h-4" /> Express Corridor Plotter
               </button>
 
               <button
@@ -436,6 +446,10 @@ export default function AdminPage({ drawerOpen: externalDrawerOpen, setDrawerOpe
 
       {/* Main Workspace Render */}
       <div className="flex-1 overflow-y-auto lg:overflow-hidden p-2">
+        {currentView === "network" && (
+          <AdminStopNetworkPlotter />
+        )}
+
         {currentView === "plotter" && (
           <AdminTransitPlotter
             initialRoute={selectedPlotterRoute}

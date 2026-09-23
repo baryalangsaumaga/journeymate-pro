@@ -45,22 +45,25 @@ function osrmUrl(profile: string, coords: string, alternatives: boolean, extra =
 }
 
 function parseRoute(route: any): RouteResult {
-  const coordinates: [number, number][] = route.geometry.coordinates.map(
-    ([lng, lat]: [number, number]) => [lat, lng]
-  );
-  const steps: RouteStep[] = (route.legs?.[0]?.steps ?? []).map((s: any) => ({
+  const coordinates: [number, number][] = route.geometry?.coordinates
+    ? route.geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng])
+    : [];
+
+  const rawSteps = route.legs?.[0]?.steps ?? route.steps ?? [];
+  const steps: RouteStep[] = rawSteps.map((s: any) => ({
     instruction: humanizeStep(s),
-    distance: s.distance,
-    duration: s.duration,
-    maneuver: s.maneuver.type,
-    modifier: s.maneuver.modifier,
-    name: s.name || "",
-    location: [s.maneuver.location[1], s.maneuver.location[0]],
+    distance: s.distance ?? 0,
+    duration: s.duration ?? 0,
+    maneuver: s.maneuver?.type ?? "continue",
+    modifier: s.maneuver?.modifier ?? "",
+    name: s.name || s.instruction || "",
+    location: s.maneuver?.location ? [s.maneuver.location[1], s.maneuver.location[0]] : [0, 0],
   }));
+
   return { 
     coordinates, 
-    distance: route.distance, 
-    duration: route.duration, 
+    distance: route.distance ?? 0, 
+    duration: route.duration ?? 0, 
     steps,
     transit_segments: route.transit_segments ?? undefined,
     stops: route.stops ?? undefined,
@@ -167,19 +170,25 @@ export async function fetchRoute(
 }
 
 function humanizeStep(s: any): string {
+  if (s.instruction && s.instruction.trim().length > 0) return s.instruction;
+  if (s.name && s.name.trim().length > 0) {
+    if (s.maneuver?.type === "transit" || s.maneuver?.type === "walk" || /^\d+\.\s/.test(s.name) || /walk|board|alight|ride|transfer|arrive/i.test(s.name)) {
+      return s.name;
+    }
+  }
   const type = s.maneuver?.type;
   const mod = s.maneuver?.modifier;
-  if (type === "transit" || (s.name && /^\d+\.\s/.test(s.name))) return s.name;
   const name = s.name ? ` onto ${s.name}` : "";
   if (type === "depart") return `Head ${mod || "out"}${name}`;
   if (type === "arrive") return s.name || `Arrive at destination`;
+  if (type === "walk") return s.name || `Walk to next stop`;
   if (type === "turn") return `Turn ${mod}${name}`;
   if (type === "merge") return `Merge ${mod || ""}${name}`.trim();
   if (type === "roundabout") return `Take the roundabout${name}`;
   if (type === "fork") return `Keep ${mod || "straight"}${name}`;
   if (type === "continue") return `Continue ${mod || "straight"}${name}`;
   if (type === "new name") return `Continue${name}`;
-  return `${type} ${mod || ""}${name}`.trim();
+  return (s.name || `${type} ${mod || ""}`).trim();
 }
 
 function haversine(a: [number, number], b: [number, number]): number {
@@ -199,8 +208,34 @@ export function formatDistance(m: number): string {
 }
 
 export function formatDuration(s: number): string {
+  if (!s || isNaN(s)) return "0 min";
   const h = Math.floor(s / 3600);
   const m = Math.round((s % 3600) / 60);
   if (h > 0) return `${h}h ${m}m`;
   return `${m} min`;
+}
+
+export function formatEta(seconds: number): string {
+  if (!seconds || isNaN(seconds)) return "";
+  const now = new Date();
+  const arrivalTime = new Date(now.getTime() + seconds * 1000);
+  const hours = arrivalTime.getHours();
+  const minutes = arrivalTime.getMinutes();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const formattedHours = hours % 12 || 12;
+  const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes;
+  return `${formattedHours}:${formattedMinutes} ${ampm}`;
+}
+
+export function calculateDistanceBetween(
+  start: { lat: number; lng: number } | [number, number],
+  end: { lat: number; lng: number } | [number, number]
+): string {
+  const startLat = Array.isArray(start) ? start[0] : start?.lat;
+  const startLng = Array.isArray(start) ? start[1] : start?.lng;
+  const endLat = Array.isArray(end) ? end[0] : end?.lat;
+  const endLng = Array.isArray(end) ? end[1] : end?.lng;
+  if (!startLat || !startLng || !endLat || !endLng) return "";
+  const distMeters = haversine([startLat, startLng], [endLat, endLng]);
+  return formatDistance(distMeters);
 }

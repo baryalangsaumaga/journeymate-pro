@@ -17,6 +17,7 @@ use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CurrencyController;
 use App\Http\Controllers\AdminTransitController;
+use App\Http\Controllers\TransitStopController;
 use App\Http\Middleware\EnsureAdmin;
 
 Route::post('/register', [AuthController::class, 'register']);
@@ -26,6 +27,12 @@ Route::get('/auth/google/callback', [AuthController::class, 'googleCallback']);
 
 // Transit Route Matching (Public or Authenticated)
 Route::match(['get', 'post'], '/transit-routes/match', [AdminTransitController::class, 'matchRoute']);
+
+// Transit Stop Network (Public endpoints for user map rendering)
+Route::get('/transit-stops', [TransitStopController::class, 'allPublic']);
+Route::get('/transit-stops/all', [TransitStopController::class, 'allPublic']);
+Route::get('/transit-stops/nearby', [TransitStopController::class, 'nearby']);
+Route::get('/transit-connections', [TransitStopController::class, 'allConnections']);
 
 use Illuminate\Support\Facades\Broadcast;
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
@@ -39,6 +46,15 @@ Route::get('/places/photo', [PlaceController::class, 'photo']);
 // Admin Protected Routes
 Route::middleware(['auth:sanctum', EnsureAdmin::class])->group(function () {
     Route::apiResource('admin/transit-routes', AdminTransitController::class);
+
+    // Transit Stop Network CRUD
+    Route::apiResource('admin/transit-stops', TransitStopController::class);
+    Route::post('admin/transit-connections', [TransitStopController::class, 'addConnection']);
+    Route::post('admin/transit-stops/{id}/connections', [TransitStopController::class, 'addConnection']);
+    Route::put('admin/transit-connections/{id}', [TransitStopController::class, 'updateConnection']);
+    Route::delete('admin/transit-connections/{id}', [TransitStopController::class, 'deleteConnection']);
+    Route::post('admin/transit-hubs/import', [TransitStopController::class, 'bulkImport']);
+    Route::post('admin/transit-stops/bulk-import', [TransitStopController::class, 'bulkImport']);
 });
 
 Route::middleware('auth:sanctum')->group(function () {

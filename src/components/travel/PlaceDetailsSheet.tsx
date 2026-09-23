@@ -12,8 +12,10 @@ import { toast } from "@/hooks/use-toast";
 import { useGeolocation, distanceMeters } from "@/hooks/useGeolocation";
 import type { Location } from "@/types/travel";
 import { useReviews } from "@/hooks/useReviews";
-import { placesApi } from "@/lib/api";
+import { placesApi, transitStopsApi } from "@/lib/api";
 import { ScrollArea } from "@/components/ui/scroll-area";
+
+import { calculateDistanceBetween } from "@/lib/routing";
 
 import {
   AlertDialog,
@@ -202,6 +204,14 @@ export function PlaceDetailsSheet({ place, open, onOpenChange, showDirections, o
   }, [place, open]);
 
   const currentPlace = detailedPlace || place;
+  const [nearbyStops, setNearbyStops] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!currentPlace?.lat || !currentPlace?.lng || !open) return;
+    transitStopsApi.getNearbyStops(currentPlace.lat, currentPlace.lng, 5000)
+      .then(res => setNearbyStops(res.data || []))
+      .catch(() => setNearbyStops([]));
+  }, [currentPlace?.lat, currentPlace?.lng, open]);
 
   const { reviews: fetchedReviews, createReview } = useReviews(
     currentPlace ? { placeName: currentPlace.name, placeId: currentPlace.id } : undefined
@@ -396,9 +406,17 @@ export function PlaceDetailsSheet({ place, open, onOpenChange, showDirections, o
               </div>
 
               <div className="absolute bottom-4 left-4 right-4 flex flex-col justify-end">
-                <Badge variant="outline" className="w-max mb-1.5 capitalize text-[10px] bg-background/80 backdrop-blur-md border-primary/20 text-primary">
-                  {currentPlace.type?.replace("-", " ") || "POI"}
-                </Badge>
+                <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                  <Badge variant="outline" className="w-max capitalize text-[10px] bg-background/80 backdrop-blur-md border-primary/20 text-primary">
+                    {currentPlace.type?.replace("-", " ") || "POI"}
+                  </Badge>
+                  {fix && currentPlace?.lat && currentPlace?.lng && (
+                    <Badge variant="outline" className="w-max text-[10px] font-bold bg-primary/10 backdrop-blur-md border-primary/30 text-primary flex items-center gap-1">
+                      <Navigation className="w-3 h-3 text-primary" />
+                      {calculateDistanceBetween([fix.lat, fix.lng], [currentPlace.lat, currentPlace.lng])} away
+                    </Badge>
+                  )}
+                </div>
                 <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">{currentPlace.name}</h2>
                 <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                   <MapPin className="w-3 h-3 flex-shrink-0 text-primary" />
@@ -516,6 +534,27 @@ export function PlaceDetailsSheet({ place, open, onOpenChange, showDirections, o
                       <div>
                         <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">About</h4>
                         <p className="text-xs text-muted-foreground leading-relaxed">{currentPlace.description}</p>
+                      </div>
+                    )}
+
+                    {nearbyStops.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-amber-500" /> Nearby TODAs & Transit Terminals ({nearbyStops.length})
+                        </h4>
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                          {nearbyStops.map((stop: any) => (
+                            <div key={stop.id} className="p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/20 flex items-center justify-between">
+                              <div>
+                                <p className="text-xs font-semibold text-foreground">{stop.name}</p>
+                                <p className="text-[10px] text-muted-foreground capitalize">{stop.city || 'Tarlac'} • {stop.type.replace('_', ' ')}</p>
+                              </div>
+                              <Badge variant="outline" className="text-[9px] border-amber-500/30 text-amber-600 bg-amber-500/10">
+                                {Math.round(stop.distance_meters || 0)}m away
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </TabsContent>

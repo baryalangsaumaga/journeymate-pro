@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Car, Bus, Footprints, Bike, ArrowRight, ArrowLeft, ArrowUp,
   CornerUpRight, CornerUpLeft, Flag, Gauge, Route, Locate,
-  UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2, Lock, Unlock, Box, Signal, RotateCcw, Download, Map, X, Plus
+  UtensilsCrossed, CloudSun, Navigation as NavIcon, Loader2, Lock, Unlock, Box, Signal, RotateCcw, Download, Map as MapIcon, X, Plus
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { fetchRoutePlan, formatDistance, formatDuration, RouteResult, RouteStep, RoutePlan } from "@/lib/routing";
+import { fetchRoutePlan, formatDistance, formatDuration, formatEta, RouteResult, RouteStep, RoutePlan } from "@/lib/routing";
 import { RouteDetailsPanel } from "@/components/travel/RouteDetailsPanel";
 import { TransitSegmentEditorModal } from "@/components/travel/TransitSegmentEditorModal";
 import { MapLayerSwitcher, type MapStyle } from "@/components/travel/MapLayerSwitcher";
@@ -29,6 +29,7 @@ import type { Location, TransitSegment } from "@/types/travel";
 import { usePlaces } from "@/hooks/usePlaces";
 import { offlineTileLayer } from "@/lib/offlineMap";
 import { PlaceDetailsSheet } from "@/components/travel/PlaceDetailsSheet";
+import { transitStopsApi } from "@/lib/api";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -111,6 +112,7 @@ export default function NavigationPage() {
   const [destination, setDestination] = useState<Location | null>(null);
   const [tripStops, setTripStops] = useState<Location[]>([]); // multi-leg from "Start the Trip"
   const [legIdx, setLegIdx] = useState(0);
+  const [modeDurations, setModeDurations] = useState<Record<string, { duration: number; eta: string }>>({});
   const [searchHidden, setSearchHidden] = useState(false);
   const [tripMode, setTripMode] = useState(false); // hides search/style/locate when launched from a trip
   const [isOnline, setIsOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
@@ -130,6 +132,39 @@ export default function NavigationPage() {
   const [downloadingMap, setDownloadingMap] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [showTransitEditor, setShowTransitEditor] = useState(false);
+  const [plottedStops, setPlottedStops] = useState<any[]>([]);
+
+  useEffect(() => {
+    transitStopsApi.getAllStops()
+      .then(res => setPlottedStops(res.data || []))
+      .catch(() => setPlottedStops([]));
+  }, []);
+
+  // Sync / calculate ETAs across all modes (car, transit, walk, bike) when destination changes
+  useEffect(() => {
+    if (!destination) {
+      setModeDurations({});
+      return;
+    }
+    const start: [number, number] = lockedStartRef.current || (userPos ? [userPos[0], userPos[1]] : [15.4802, 120.5979]);
+    const end: [number, number] = [destination.lat, destination.lng];
+    const modes: ("car" | "transit" | "walk" | "bike")[] = ["car", "transit", "walk", "bike"];
+
+    modes.forEach(async (m) => {
+      try {
+        const plan = await fetchRoutePlan(start, end, m, "Your Location", destination.name);
+        if (plan?.primary?.duration) {
+          setModeDurations(prev => ({
+            ...prev,
+            [m]: {
+              duration: plan.primary.duration,
+              eta: formatEta(plan.primary.duration),
+            }
+          }));
+        }
+      } catch {}
+    });
+  }, [destination?.lat, destination?.lng]);
 
   useEffect(() => { try { window.localStorage.setItem("nav.accuracyThreshold", String(accuracyThreshold)); } catch {} }, [accuracyThreshold]);
 
@@ -597,8 +632,9 @@ export default function NavigationPage() {
     });
 
     // Draw transit stop markers for commute mode with interactive place sheet click handlers
-    const stopsToRender: any[] = ((route as any).stops && Array.isArray((route as any).stops) && (route as any).stops.length > 0)
-      ? (route as any).stops
+    const routeStops = (route as any)?.stops && Array.isArray((route as any).stops) ? (route as any).stops : [];
+    const stopsToRender: any[] = routeStops.length > 0
+      ? [...routeStops, ...plottedStops]
       : (selectedMode === 'transit' && route?.transit_segments && route.transit_segments.length > 0 && route.coordinates?.length > 1)
       ? (() => {
           const segs = route.transit_segments;
@@ -633,37 +669,79 @@ export default function NavigationPage() {
               });
             }
           });
-          return generatedStops;
+          return [...generatedStops, ...plottedStops];
         })()
-      : [];
+      : plottedStops;
 
-    stopsToRender.forEach((stop: any) => {
+    // Deduplicate stops by ID or name+coords
+    const uniqueStops = Array.from(new Map(stopsToRender.map(s => [s.id || `${s.name}-${s.lat ?? s.latitude}-${s.lng ?? s.longitude}`, s])).values());
+
+    uniqueStops.forEach((stop: any) => {
+      const latVal = Number(stop.lat ?? stop.latitude);
+      const lngVal = Number(stop.lng ?? stop.longitude);
+      if (isNaN(latVal) || isNaN(lngVal) || !latVal || !lngVal) return;
+
       const isPickup = stop.type === 'pickup';
       const isTransfer = stop.type === 'transfer';
-      const stopBg = isPickup ? "hsl(217, 91%, 60%)" : isTransfer ? "hsl(38, 92%, 50%)" : "hsl(0, 84%, 60%)";
+      const isToda = stop.type === 'toda' || stop.type === 'tricycle_stand';
+      const isTerminal = stop.type === 'terminal' || stop.type === 'bus_stop';
       
+      const stopBg = isPickup ? "#3B82F6" : isTransfer ? "#F59E0B" : isToda ? "#F59E0B" : isTerminal ? "#8B5CF6" : "#EF4444";
+      const modeIcon = isToda ? '🛺' : stop.mode === 'jeepney' ? '🚍' : stop.mode === 'tricycle' ? '🛺' : stop.mode === 'bus' ? '🚌' : '🚏';
+
       const stopHtml = `
-        <div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;">
-          <div style="width:18px;height:18px;border-radius:50%;background:${stopBg};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;">
-            <div style="width:6px;height:6px;border-radius:50%;background:white;"></div>
+        <div style="width:160px;height:72px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;pointer-events:none;">
+          <!-- Name Label Tag (ABOVE PIN) -->
+          <div style="
+            background:#ffffff;
+            color:#0f172a;
+            padding:2px 7px;
+            border-radius:6px;
+            font-weight:700;
+            font-size:10px;
+            font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+            box-shadow:0 2px 8px rgba(0,0,0,0.22);
+            border:1.5px solid ${stopBg};
+            white-space:nowrap;
+            margin-bottom:4px;
+            pointer-events:auto;
+          ">
+            ${stop.name}
           </div>
-          <div style="margin-top:2px;background:rgba(15,23,42,0.88);color:white;font-family:Inter,sans-serif;font-size:9px;font-weight:700;padding:2px 6px;border-radius:6px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;gap:3px;border:1px solid rgba(255,255,255,0.15);">
-            <span style="color:${stopBg};font-size:8px;">●</span> ${stop.name}
+
+          <!-- Google Maps Teardrop Pin (Pointing down) -->
+          <div style="
+            position:relative;
+            width:30px;
+            height:30px;
+            background:${stopBg};
+            border-radius:50% 50% 50% 0;
+            transform:rotate(-45deg);
+            border:2.5px solid #ffffff;
+            box-shadow:0 4px 10px rgba(0,0,0,0.3);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            margin-bottom:8px;
+            flex-shrink:0;
+            pointer-events:auto;
+          ">
+            <span style="transform:rotate(45deg);font-size:15px;line-height:1;">${modeIcon}</span>
           </div>
         </div>`;
-      const icon = L.divIcon({ className: "", html: stopHtml, iconSize: [20, 36], iconAnchor: [10, 9] });
-      
-      const mk = L.marker([stop.lat, stop.lng], { icon, zIndexOffset: 800 }).addTo(map);
+      const icon = L.divIcon({ className: "google-maps-stop-pin", html: stopHtml, iconSize: [160, 72], iconAnchor: [80, 70] });
+
+      const mk = L.marker([latVal, lngVal], { icon, zIndexOffset: 800 }).addTo(map);
       mk.on("click", () => {
         setSelectedPlace({
           id: stop.id,
           name: stop.name,
-          address: stop.instructions || `Transit Stop - ${stop.type.toUpperCase()}`,
-          lat: stop.lat,
-          lng: stop.lng,
+          address: stop.address || stop.instructions || `Transit Stop - ${String(stop.type).toUpperCase()}`,
+          lat: latVal,
+          lng: lngVal,
           category: "transit-stop",
           type: stop.type,
-          modes: stop.modes || [],
+          modes: stop.modes || stop.vehicles || [],
           fare: stop.fare,
           durationMinutes: stop.duration_minutes,
           instructions: stop.instructions,
@@ -1038,6 +1116,7 @@ export default function NavigationPage() {
             <PlaceSearchInput
               placeholder="Search destination…"
               onPick={handlePickDestination}
+              userLocation={userPos ? { lat: userPos[0], lng: userPos[1] } : undefined}
               className="bg-card/95 backdrop-blur-sm rounded-xl shadow-card-hover"
             />
           </motion.div>
@@ -1222,21 +1301,40 @@ export default function NavigationPage() {
               )}
 
               <div className="flex gap-2">
-                {transitModes.map(({ id, icon: Icon, label }) => (
-                  <button
-                    key={id}
-                    onClick={() => setSelectedMode(id)}
-                    className={`flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl transition-all tap-highlight ${
-                      selectedMode === id ? "bg-primary text-primary-foreground shadow-travel" : "bg-muted"
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span className="text-[10px] font-semibold">{label}</span>
-                    <span className={`text-[9px] ${selectedMode === id ? "opacity-70" : "text-muted-foreground"}`}>
-                      {loadingRoute && selectedMode === id ? "…" : selectedMode === id && route ? formatDuration(route.duration) : "Tap to calc"}
-                    </span>
-                  </button>
-                ))}
+                {transitModes.map(({ id, icon: Icon, label }) => {
+                  const modeInfo = modeDurations[id];
+                  const durText = modeInfo 
+                    ? formatDuration(modeInfo.duration) 
+                    : (selectedMode === id && route ? formatDuration(route.duration) : (loadingRoute && selectedMode === id ? "…" : "Tap to calc"));
+                  const etaText = modeInfo 
+                    ? modeInfo.eta 
+                    : (selectedMode === id && route?.duration ? formatEta(route.duration) : null);
+
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setSelectedMode(id)}
+                      className={`flex-1 flex flex-col items-center gap-0.5 py-2 px-1 rounded-xl transition-all tap-highlight ${
+                        selectedMode === id ? "bg-primary text-primary-foreground shadow-travel ring-2 ring-primary/30" : "bg-muted hover:bg-muted/80"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1">
+                        <Icon className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-bold">{label}</span>
+                      </div>
+                      <span className={`text-[10px] font-extrabold ${selectedMode === id ? "text-primary-foreground" : "text-foreground"}`}>
+                        {durText}
+                      </span>
+                      {etaText && (
+                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${
+                          selectedMode === id ? "bg-white/20 text-white" : "bg-primary/10 text-primary border border-primary/20"
+                        }`}>
+                          ETA {etaText}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Alternate route chips — appear when OSRM returned more than one path. */}
@@ -1285,7 +1383,7 @@ export default function NavigationPage() {
                     <p className="text-[10px] text-muted-foreground truncate group-hover:text-foreground transition-colors">{destination.address || destination.description || "Unknown address"}</p>
                     {tripStops.length > 0 && legIdx < tripStops.length - 1 && (
                       <p className="text-[11px] font-semibold text-indigo-500 mt-1 flex items-center gap-1">
-                        <Map className="w-3 h-3" /> Side Trip — Then to: {tripStops[tripStops.length - 1].name}
+                        <MapIcon className="w-3 h-3" /> Side Trip — Then to: {tripStops[tripStops.length - 1].name}
                       </p>
                     )}
                     {showToll && (
@@ -1306,38 +1404,78 @@ export default function NavigationPage() {
                 </div>
               )}
 
-              {/* Post-Alighting guidance — active when mode is transit */}
-              {selectedMode === "transit" && destination && (
-                <div className="space-y-2">
-                  {(() => {
-                    const dropoffStop = (route as any)?.stops?.find((s: any) => s.type === "dropoff");
-                    const egressSeg = route?.transit_segments?.find(s => s.id === "egress_seg_1" || s.type === "walk" || s.type === "tricycle");
-                    return (
-                      <div className="p-2.5 rounded-xl bg-orange-500/10 border border-orange-500/30 text-xs space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-base">🚏</span>
-                            <div>
-                              <p className="font-bold text-[11px] text-orange-400">1st Target: Alight at Drop-off Stop</p>
-                              <p className="text-[10px] font-semibold text-foreground">
-                                {dropoffStop?.name || route?.transit_segments?.[route.transit_segments.length - 2]?.arrivalName || "Admin Drop-off Terminal"}
-                              </p>
+              {/* Prominent Step-by-Step Commute Guide Card */}
+              {selectedMode === "transit" && destination && route && (
+                <div className="space-y-2.5 p-3.5 rounded-2xl bg-gradient-to-br from-card to-muted/60 border border-primary/25 shadow-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                        <NavIcon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="font-display font-bold text-xs text-foreground">Step-by-Step Commute Guide</p>
+                        <p className="text-[9px] text-muted-foreground">Public transit route & connection stops</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {route?.duration && (
+                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px] font-bold px-2 py-0.5 flex items-center gap-1">
+                          ETA {formatEta(route.duration)} (~{formatDuration(route.duration)})
+                        </Badge>
+                      )}
+                      {((route as any)?.total_fare > 0 || route.transit_segments?.some(s => (s.costEstimate || 0) > 0)) && (
+                        <Badge className="bg-emerald-600 text-white text-[10px] font-bold border-0 shadow-sm">
+                          ₱{(route as any)?.total_fare || route.transit_segments?.reduce((sum, seg) => sum + (seg.costEstimate || 0), 0)} Est. Fare
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Turn-by-turn Commute Steps List */}
+                  <div className="space-y-2 pt-1 border-t border-border/40 max-h-[240px] sm:max-h-[280px] overflow-y-auto pr-1">
+                    {route.steps && route.steps.length > 0 ? (
+                      route.steps.map((step, sIdx) => {
+                        const isWalk = step.maneuver === "walk" || step.instruction.toLowerCase().includes("walk");
+                        const isArrive = step.maneuver === "arrive";
+                        const isTransit = step.maneuver === "transit" || step.instruction.toLowerCase().includes("board");
+
+                        return (
+                          <div key={sIdx} className="flex items-start gap-2.5 p-2 rounded-xl bg-card/90 border border-border/40 shadow-xs">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5 font-bold ${
+                              isArrive 
+                                ? "bg-emerald-500 text-white" 
+                                : isTransit 
+                                ? "bg-primary text-primary-foreground" 
+                                : "bg-blue-500/10 text-blue-500 border border-blue-500/30"
+                            }`}>
+                              {sIdx + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-[11px] leading-snug text-foreground">{step.instruction}</p>
+                              {step.distance > 0 && (
+                                <p className="text-[9px] font-medium text-muted-foreground mt-0.5">{formatDistance(step.distance)}</p>
+                              )}
                             </div>
                           </div>
-                          <Badge className="bg-orange-500 text-white text-[9px] font-bold border-0">
-                            1st Drop-off
-                          </Badge>
+                        );
+                      })
+                    ) : route.transit_segments && route.transit_segments.length > 0 ? (
+                      route.transit_segments.map((seg, sIdx) => (
+                        <div key={sIdx} className="flex items-start gap-2.5 p-2 rounded-xl bg-card/90 border border-border/40 shadow-xs">
+                          <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5 font-bold">
+                            {sIdx + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-[11px] leading-snug text-foreground">{seg.instructions || `${seg.title} from ${seg.departureName} to ${seg.arrivalName}`}</p>
+                            <div className="flex items-center gap-3 text-[9px] font-semibold text-muted-foreground mt-0.5">
+                              {seg.durationMinutes && <span>~{seg.durationMinutes} mins</span>}
+                              {seg.costEstimate && <span className="text-emerald-500 font-bold">₱{seg.costEstimate}</span>}
+                            </div>
+                          </div>
                         </div>
-
-                        <div className="flex items-center gap-2 p-2 rounded-lg bg-card/80 border border-border/50 text-[10px] font-medium">
-                          <span className="text-muted-foreground">What to do next:</span>
-                          <span className="text-foreground font-semibold flex-1 truncate">
-                            {egressSeg?.instructions || `Alight at drop-off stop and walk/ride to ${destination.name}`}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                      ))
+                    ) : null}
+                  </div>
                 </div>
               )}
 
