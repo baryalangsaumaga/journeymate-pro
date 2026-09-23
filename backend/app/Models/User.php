@@ -24,6 +24,7 @@ class User extends Authenticatable
         'password',
         'google_id',
         'profile_pic',
+        'is_admin',
     ];
 
     /**
@@ -47,6 +48,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'last_active_at' => 'datetime',
+            'is_admin' => 'boolean',
         ];
     }
 

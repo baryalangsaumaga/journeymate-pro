@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\TransitStop;
+use App\Models\TransitConnection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -20,6 +22,18 @@ class RouteService
         if (count($waypoints) < 2) return null;
 
         if ($mode === 'transit') {
+            // 1. Try Network Graph Router (Dijkstra through admin-plotted stops)
+            $networkRoute = $this->calculateNetworkTransitRoute($waypoints, $originName, $destName);
+            if ($networkRoute !== null) {
+                return $networkRoute;
+            }
+
+            // 2. Try Admin Hybrid Route (pre-defined express corridors)
+            $adminHybrid = $this->calculateAdminHybridTransitRoute($waypoints, $originName, $destName);
+            if ($adminHybrid !== null) {
+                return $adminHybrid;
+            }
+
             $googleTransit = $this->calculateGoogleTransitRoute($waypoints);
             if ($googleTransit !== null) {
                 return $googleTransit;
@@ -856,24 +870,63 @@ class RouteService
                 'name' => (count($steps) + 1) . ". Arrive at {$destName}",
                 'maneuver' => ['type' => 'arrive', 'modifier' => '', 'location' => [$waypoints[count($waypoints)-1][1], $waypoints[count($waypoints)-1][0]]],
             ];
-        }
 
-        return [
-            'routes' => [[
-                'distance' => $distance,
-                'duration' => $duration,
-                'is_transit' => true,
-                'geometry' => [
-                    'coordinates' => $flatCoords
-                ],
-                'legs' => [[
+            $numSegs = count($transitSegments);
+            $totalCoords = count($flatCoords);
+            $stops = [];
+
+            foreach ($transitSegments as $idx => $seg) {
+                $coordIndex = (int)round(($idx / max(1, $numSegs)) * max(0, $totalCoords - 1));
+                $pt = $flatCoords[$coordIndex] ?? [$waypoints[0][1], $waypoints[0][0]];
+
+                $stops[] = [
+                    'id' => "fallback_stop_{$idx}_pickup",
+                    'name' => $seg['departureName'] ?: ("Board " . ($seg['title'] ?? 'Transit')),
+                    'lat' => (float)$pt[1],
+                    'lng' => (float)$pt[0],
+                    'type' => $idx === 0 ? 'pickup' : 'transfer',
+                    'leg_index' => $idx,
+                    'modes' => [$seg['type'] ?? 'transit'],
+                    'fare' => (float)($seg['costEstimate'] ?? 0),
+                    'duration_minutes' => (int)($seg['durationMinutes'] ?? 5),
+                    'instructions' => $seg['instructions'] ?? '',
+                ];
+
+                if ($idx === $numSegs - 1) {
+                    $lastPt = $flatCoords[max(0, $totalCoords - 1)] ?? [$waypoints[count($waypoints)-1][1], $waypoints[count($waypoints)-1][0]];
+                    $stops[] = [
+                        'id' => "fallback_stop_{$idx}_dropoff",
+                        'name' => $seg['arrivalName'] ?: $destName,
+                        'lat' => (float)$lastPt[1],
+                        'lng' => (float)$lastPt[0],
+                        'type' => 'dropoff',
+                        'leg_index' => $idx,
+                        'modes' => [$seg['type'] ?? 'transit'],
+                        'fare' => (float)($seg['costEstimate'] ?? 0),
+                        'duration_minutes' => (int)($seg['durationMinutes'] ?? 5),
+                        'instructions' => $seg['instructions'] ?? '',
+                    ];
+                }
+            }
+
+            return [
+                'routes' => [[
                     'distance' => $distance,
                     'duration' => $duration,
-                    'steps' => $steps
-                ]],
-                'transit_segments' => $transitSegments
-            ]]
-        ];
+                    'is_transit' => true,
+                    'geometry' => [
+                        'coordinates' => $flatCoords
+                    ],
+                    'legs' => [[
+                        'distance' => $distance,
+                        'duration' => $duration,
+                        'steps' => $steps
+                    ]],
+                    'transit_segments' => $transitSegments,
+                    'stops' => $stops,
+                ]]
+            ];
+        }
     }
 
     /**
@@ -970,6 +1023,33 @@ class RouteService
     }
 
     /**
+     * Fetch street-network polyline path between two coordinates via OSRM
+     */
+    protected function getOsrmStreetPath(float $startLat, float $startLng, float $endLat, float $endLng, string $profile = 'driving'): array
+    {
+        $d = $this->haversineDistance([$startLat, $startLng], [$endLat, $endLng]);
+        if ($d < 10) {
+            return [[$startLng, $startLat], [$endLng, $endLat]];
+        }
+
+        $url = "{$this->osrmBaseUrl}/route/v1/{$profile}/{$startLng},{$startLat};{$endLng},{$endLat}?overview=full&geometries=geojson";
+
+        try {
+            $res = Http::timeout(3)->get($url);
+            if ($res->successful() && isset($res['routes'][0]['geometry']['coordinates'])) {
+                $coords = $res['routes'][0]['geometry']['coordinates'];
+                if (is_array($coords) && count($coords) > 1) {
+                    return $coords;
+                }
+            }
+        } catch (\Exception $e) {
+            Log::warning("getOsrmStreetPath Exception: " . $e->getMessage());
+        }
+
+        return [[$startLng, $startLat], [$endLng, $endLat]];
+    }
+
+    /**
      * Decode Google Maps Encoded Polyline algorithm into [lng, lat] coordinates
      */
     protected function decodeGooglePolyline(string $encoded): array
@@ -1006,5 +1086,833 @@ class RouteService
         }
 
         return $points;
+    }
+
+    /**
+     * Calculate perpendicular projection or closest point on line segment
+     */
+    protected function closestPointOnSegment($p, $a, $b)
+    {
+        $px = (float)$p[1]; $py = (float)$p[0]; // lng, lat
+        $ax = (float)$a[1]; $ay = (float)$a[0];
+        $bx = (float)$b[1]; $by = (float)$b[0];
+
+        $dx = $bx - $ax;
+        $dy = $by - $ay;
+
+        if ($dx == 0 && $dy == 0) {
+            return [$a[0], $a[1]];
+        }
+
+        $t = (($px - $ax) * $dx + ($py - $ay) * $dy) / ($dx * $dx + $dy * $dy);
+        $t = max(0, min(1, $t));
+
+        $closestLng = $ax + $t * $dx;
+        $closestLat = $ay + $t * $dy;
+
+        return [$closestLat, $closestLng];
+    }
+
+    /**
+     * Find nearest point along route polyline
+     */
+    protected function findNearestPointOnCorridor($point, $flatCoords)
+    {
+        if (empty($flatCoords)) {
+            return ['point' => $point, 'distance_m' => 0, 'index' => 0];
+        }
+
+        $minDist = PHP_INT_MAX;
+        $bestPoint = $point;
+        $bestIdx = 0;
+
+        for ($i = 0; $i < count($flatCoords) - 1; $i++) {
+            $a = [(float)$flatCoords[$i][1], (float)$flatCoords[$i][0]]; // [lat, lng]
+            $b = [(float)$flatCoords[$i+1][1], (float)$flatCoords[$i+1][0]];
+            $closest = $this->closestPointOnSegment($point, $a, $b);
+            $dist = $this->haversineDistance($point, $closest);
+
+            if ($dist < $minDist) {
+                $minDist = $dist;
+                $bestPoint = $closest;
+                $bestIdx = $i;
+            }
+        }
+
+        return [
+            'point' => $bestPoint,
+            'distance_m' => $minDist,
+            'index' => $bestIdx
+        ];
+    }
+
+
+
+    /**
+     * Normalize coordinate array to GeoJSON [lng, lat] format
+     */
+    protected function normalizeLngLat(array $pt): array
+    {
+        $a = (float) $pt[0];
+        $b = (float) $pt[1];
+        if (abs($a) <= 90 && abs($b) > 90) {
+            // $a is latitude, $b is longitude -> return [lng, lat]
+            return [$b, $a];
+        }
+        // Already [lng, lat]
+        return [$a, $b];
+    }
+
+    /**
+     * Calculate hybrid public commute using Admin-plotted transit routes + local access & egress legs.
+     */
+    protected function calculateAdminHybridTransitRoute($waypoints, $originName = 'Your Starting Location', $destName = 'Destination')
+    {
+        if (count($waypoints) < 2) return null;
+
+        $startLat = (float) $waypoints[0][0];
+        $startLng = (float) $waypoints[0][1];
+        $endLat = (float) $waypoints[count($waypoints) - 1][0];
+        $endLng = (float) $waypoints[count($waypoints) - 1][1];
+
+        $routes = \App\Models\AdminTransitRoute::with('legs')->get();
+        if ($routes->isEmpty()) return null;
+
+        $bestRoute = null;
+        $bestScore = PHP_INT_MAX;
+
+        foreach ($routes as $route) {
+            if ($route->legs->isEmpty()) continue;
+
+            $firstLeg = $route->legs->first();
+            $lastLeg = $route->legs->last();
+
+            $dStartKm = $this->haversineDistance([$startLat, $startLng], [(float)$firstLeg->start_lat, (float)$firstLeg->start_lng]) / 1000;
+            $dEndKm = $this->haversineDistance([(float)$lastLeg->end_lat, (float)$lastLeg->end_lng], [$endLat, $endLng]) / 1000;
+
+            if ($dStartKm <= 100.0 && $dEndKm <= 100.0) {
+                $score = $dStartKm + $dEndKm;
+                if ($score < $bestScore) {
+                    $bestScore = $score;
+                    $bestRoute = $route;
+                }
+            }
+        }
+
+        if (!$bestRoute) return null;
+
+        // Build continuous route corridor coordinates & ensure road geometry exists for every leg
+        $routePolyline = [];
+        $stops = [];
+
+        foreach ($bestRoute->legs as $lIdx => $leg) {
+            $lCoords = [];
+            if (!empty($leg->path_coordinates)) {
+                $raw = is_array($leg->path_coordinates) ? $leg->path_coordinates : json_decode($leg->path_coordinates, true);
+                if (is_array($raw) && count($raw) > 1) {
+                    foreach ($raw as $pt) {
+                        if (is_array($pt) && count($pt) >= 2) {
+                            $lCoords[] = $this->normalizeLngLat($pt);
+                        }
+                    }
+                }
+            }
+
+            // Fallback OSRM street fetch if path_coordinates empty
+            if (count($lCoords) < 2) {
+                $lCoords = $this->getOsrmStreetPath((float)$leg->start_lat, (float)$leg->start_lng, (float)$leg->end_lat, (float)$leg->end_lng, $leg->mode === 'walk' ? 'foot' : 'driving');
+            }
+
+            foreach ($lCoords as $pt) {
+                $routePolyline[] = $this->normalizeLngLat($pt);
+            }
+
+            $modesList = [];
+            if (!empty($leg->mode)) {
+                $modesList = array_map('trim', explode('/', $leg->mode));
+            }
+
+            $pickupName = ($lIdx === 0 && !empty($bestRoute->origin_name))
+                ? $bestRoute->origin_name
+                : (!empty($leg->route_name) ? "{$leg->route_name} Loading Stop" : "Pickup Stop #" . ($lIdx + 1));
+
+            $dropoffName = ($lIdx === count($bestRoute->legs) - 1 && !empty($bestRoute->dest_name))
+                ? $bestRoute->dest_name
+                : (!empty($leg->route_name) ? "{$leg->route_name} Drop-off Terminal" : "Drop-off Stop #" . ($lIdx + 1));
+
+            $stops[] = [
+                'id' => "stop_{$lIdx}_pickup",
+                'name' => $pickupName,
+                'place_name' => $pickupName,
+                'address' => "{$leg->start_lat}, {$leg->start_lng}",
+                'vicinity' => !empty($bestRoute->origin_name) ? $bestRoute->origin_name : "Loading Stop Area",
+                'category' => "Pickup Terminal",
+                'lat' => (float)$leg->start_lat,
+                'lng' => (float)$leg->start_lng,
+                'type' => 'pickup',
+                'leg_index' => $lIdx,
+                'modes' => $modesList,
+                'fare' => (float)$leg->fare,
+                'duration_minutes' => (int)$leg->duration_minutes,
+                'instructions' => $leg->instructions ?: "Board {$leg->mode} at {$pickupName}",
+            ];
+
+            if ($lIdx === count($bestRoute->legs) - 1) {
+                $stops[] = [
+                    'id' => "stop_{$lIdx}_dropoff",
+                    'name' => $dropoffName,
+                    'place_name' => $dropoffName,
+                    'address' => "{$leg->end_lat}, {$leg->end_lng}",
+                    'vicinity' => !empty($bestRoute->dest_name) ? $bestRoute->dest_name : "Drop-off Terminal Area",
+                    'category' => "Drop-off Terminal",
+                    'lat' => (float)$leg->end_lat,
+                    'lng' => (float)$leg->end_lng,
+                    'type' => 'dropoff',
+                    'leg_index' => $lIdx,
+                    'modes' => $modesList,
+                    'fare' => (float)$leg->fare,
+                    'duration_minutes' => (int)$leg->duration_minutes,
+                    'instructions' => "Alight at {$dropoffName}",
+                ];
+            }
+        }
+
+        // Project user start onto corridor polyline for roadside pickup
+        $nearestStart = $this->findNearestPointOnCorridor([$startLat, $startLng], $routePolyline);
+
+        $boardLat = $nearestStart['point'][0];
+        $boardLng = $nearestStart['point'][1];
+        $boardDistM = $nearestStart['distance_m'];
+
+        // Alighting Point: ALWAYS the exact Admin Drop-off Terminal / Stop coordinates
+        $lastLeg = $bestRoute->legs->last();
+        $adminDropOffLat = (float)$lastLeg->end_lat;
+        $adminDropOffLng = (float)$lastLeg->end_lng;
+        $adminDropOffName = $dropoffName;
+
+        $alightLat = $adminDropOffLat;
+        $alightLng = $adminDropOffLng;
+        $alightDistM = $this->haversineDistance([$endLat, $endLng], [$adminDropOffLat, $adminDropOffLng]);
+        $alightStopName = $adminDropOffName;
+
+        // Build Hybrid Segments & Steps
+        $transitSegments = [];
+        $steps = [];
+        $flatCoords = [];
+        $totalDuration = 0;
+        $totalFare = (float) $bestRoute->total_fare;
+
+        // 1. Initial Access Leg (Street-Network Routing to Boarding Point)
+        $accessIsWalk = $boardDistM < 400;
+        $accessType = $accessIsWalk ? 'walk' : 'tricycle';
+        $accessMins = max(1, (int)round($boardDistM / ($accessIsWalk ? 80 : 250)));
+        $accessFare = $accessIsWalk ? 0 : 25;
+        $accessTitle = $accessIsWalk ? "Walk to Roadside Loading Stop" : "Local Ride to Highway Loading Area";
+        
+        $accessInstr = $accessIsWalk
+            ? ($boardDistM < 80 
+                ? "Walk to nearest loading stop along highway (~1 min)" 
+                : "Walk from {$originName} to highway loading point (~" . round($boardDistM) . "m, ~{$accessMins} mins)")
+            : "Ride local tricycle from {$originName} to highway loading area (~" . round($boardDistM / 1000, 1) . "km, ~{$accessMins} mins)";
+
+        $totalDuration += $accessMins * 60;
+        $totalFare += $accessFare;
+
+        // Fetch OSRM street path from user GPS to boarding point
+        $accessStreetCoords = $this->getOsrmStreetPath($startLat, $startLng, $boardLat, $boardLng, $accessIsWalk ? 'foot' : 'driving');
+        foreach ($accessStreetCoords as $pt) {
+            $flatCoords[] = $pt;
+        }
+
+        $transitSegments[] = [
+            'id' => 'access_seg_1',
+            'type' => $accessType,
+            'title' => $accessTitle,
+            'departureName' => $originName,
+            'arrivalName' => !empty($bestRoute->origin_name) ? $bestRoute->origin_name : "Highway Loading Stop",
+            'durationMinutes' => $accessMins,
+            'costEstimate' => $accessFare,
+            'instructions' => $accessInstr,
+        ];
+
+        $steps[] = [
+            'distance' => round($boardDistM),
+            'duration' => $accessMins * 60,
+            'name' => "1. " . $accessInstr,
+            'maneuver' => ['type' => 'depart', 'modifier' => '', 'location' => [$startLng, $startLat]],
+        ];
+
+        // 2. Main Transit Polyline (Follows corridor from Boarding Point to Admin Drop-off Terminal)
+        $startIndex = $nearestStart['index'];
+        for ($i = $startIndex; $i < count($routePolyline); $i++) {
+            $flatCoords[] = $routePolyline[$i];
+        }
+
+        $stepCounter = 2;
+        foreach ($bestRoute->legs as $legIdx => $leg) {
+            $legMins = max(1, $leg->duration_minutes);
+            $totalDuration += $legMins * 60;
+            $mode = strtolower($leg->mode);
+
+            $legDepName = ($legIdx === 0 && !empty($bestRoute->origin_name)) ? $bestRoute->origin_name : "Highway Stop";
+            $legArrName = ($legIdx === count($bestRoute->legs) - 1 && !empty($bestRoute->dest_name)) ? $bestRoute->dest_name : "Drop-off Terminal";
+            $legInstr = $leg->instructions ?: "Board {$leg->mode} ({$leg->route_name}) from {$legDepName} to {$legArrName}";
+
+            $transitSegments[] = [
+                'id' => "admin_leg_{$leg->id}",
+                'type' => $mode,
+                'title' => "{$leg->route_name} ({$leg->mode})",
+                'departureName' => $legDepName,
+                'arrivalName' => $legArrName,
+                'durationMinutes' => $legMins,
+                'costEstimate' => (float)$leg->fare,
+                'instructions' => $legInstr,
+            ];
+
+            $steps[] = [
+                'distance' => 500,
+                'duration' => $legMins * 60,
+                'name' => "{$stepCounter}. " . $legInstr . " (Fare: ₱" . number_format((float)$leg->fare, 2) . ")",
+                'maneuver' => ['type' => 'transit', 'modifier' => '', 'location' => [(float)$leg->start_lng, (float)$leg->start_lat]],
+            ];
+            $stepCounter++;
+        }
+
+        // 3. Final Egress Leg (Street-Network Routing)
+        $egressIsWalk = $alightDistM < 300;
+        $egressType = $egressIsWalk ? 'walk' : 'tricycle';
+        $egressMins = max(1, (int)round($alightDistM / ($egressIsWalk ? 80 : 250)));
+        $egressFare = $egressIsWalk ? 0 : 20;
+        $egressTitle = $egressIsWalk ? "Walk to {$destName}" : "Local Tricycle to {$destName}";
+        $egressInstr = $egressIsWalk
+            ? "Alight at {$alightStopName} and walk to {$destName} (~" . round($alightDistM) . "m, ~{$egressMins} mins)"
+            : "Alight at {$alightStopName} and hire local tricycle to {$destName} (~" . round($alightDistM / 1000, 1) . "km, ~{$egressMins} mins)";
+
+        $totalDuration += $egressMins * 60;
+        $totalFare += $egressFare;
+
+        $egressStreetCoords = $this->getOsrmStreetPath($alightLat, $alightLng, $endLat, $endLng, $egressIsWalk ? 'foot' : 'driving');
+        foreach ($egressStreetCoords as $pt) {
+            $flatCoords[] = $pt;
+        }
+
+        $transitSegments[] = [
+            'id' => 'egress_seg_1',
+            'type' => $egressType,
+            'title' => $egressTitle,
+            'departureName' => $alightStopName,
+            'arrivalName' => $destName,
+            'durationMinutes' => $egressMins,
+            'costEstimate' => $egressFare,
+            'instructions' => $egressInstr,
+        ];
+
+        $steps[] = [
+            'distance' => round($alightDistM),
+            'duration' => $egressMins * 60,
+            'name' => "{$stepCounter}. " . $egressInstr,
+            'maneuver' => ['type' => 'transit', 'modifier' => '', 'location' => [$alightLng, $alightLat]],
+        ];
+        $stepCounter++;
+
+        $steps[] = [
+            'distance' => 0,
+            'duration' => 0,
+            'name' => "{$stepCounter}. Arrive at {$destName}",
+            'maneuver' => ['type' => 'arrive', 'modifier' => '', 'location' => [$endLng, $endLat]],
+        ];
+
+        $totalDistance = 0;
+        for ($i = 0; $i < count($flatCoords) - 1; $i++) {
+            $totalDistance += $this->haversineDistance([$flatCoords[$i][1], $flatCoords[$i][0]], [$flatCoords[$i+1][1], $flatCoords[$i+1][0]]);
+        }
+
+        return [
+            'routes' => [
+                [
+                    'distance' => $totalDistance,
+                    'duration' => $totalDuration,
+                    'is_admin_route' => true,
+                    'admin_title' => $bestRoute->title,
+                    'total_fare' => $totalFare,
+                    'transit_segments' => $transitSegments,
+                    'stops' => $stops,
+                    'geometry' => [
+                        'coordinates' => $flatCoords,
+                    ],
+                    'legs' => [
+                        [
+                            'distance' => $totalDistance,
+                            'duration' => $totalDuration,
+                            'steps' => $steps,
+                        ]
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * Network Graph Router (Dijkstra algorithm over admin-plotted TransitStops and TransitConnections)
+     */
+    public function calculateNetworkTransitRoute(array $waypoints, string $originName = 'Start', string $destName = 'Destination'): ?array
+    {
+        if (count($waypoints) < 2) {
+            return null;
+        }
+
+        $originLat = (float) $waypoints[0][0];
+        $originLng = (float) $waypoints[0][1];
+        $destLat = (float) $waypoints[count($waypoints) - 1][0];
+        $destLng = (float) $waypoints[count($waypoints) - 1][1];
+
+        $stops = TransitStop::all();
+        if ($stops->count() < 2) {
+            return null;
+        }
+
+        // Find closest start stop and end stop
+        $startStop = null;
+        $minStartDist = PHP_FLOAT_MAX;
+
+        $endStop = null;
+        $minEndDist = PHP_FLOAT_MAX;
+
+        foreach ($stops as $stop) {
+            $dStart = $this->haversineDistance([$originLat, $originLng], [(float)$stop->latitude, (float)$stop->longitude]);
+            if ($dStart < $minStartDist) {
+                $minStartDist = $dStart;
+                $startStop = $stop;
+            }
+
+            $dEnd = $this->haversineDistance([$destLat, $destLng], [(float)$stop->latitude, (float)$stop->longitude]);
+            if ($dEnd < $minEndDist) {
+                $minEndDist = $dEnd;
+                $endStop = $stop;
+            }
+        }
+
+        if (!$startStop || !$endStop) {
+            return null;
+        }
+
+        // Fetch connections
+        $connections = TransitConnection::all();
+        $graph = [];
+
+        foreach ($connections as $conn) {
+            $u = (int) $conn->from_stop_id;
+            $v = (int) $conn->to_stop_id;
+            $weight = max(1, (int) ($conn->duration_minutes ?? round($conn->distance_meters / 300)));
+
+            $graph[$u][] = [
+                'to' => $v,
+                'weight' => $weight,
+                'connection' => $conn,
+                'direction' => 'forward'
+            ];
+
+            if ($conn->is_bidirectional) {
+                $graph[$v][] = [
+                    'to' => $u,
+                    'weight' => $weight,
+                    'connection' => $conn,
+                    'direction' => 'reverse'
+                ];
+            }
+        }
+
+        // Dijkstra algorithm
+        $startId = (int) $startStop->id;
+        $targetId = (int) $endStop->id;
+
+        $pathEdges = [];
+
+        if ($startId !== $targetId) {
+            $dist = [];
+            $prev = [];
+            $unvisited = [];
+
+            foreach ($stops as $stop) {
+                $sId = (int) $stop->id;
+                $dist[$sId] = INF;
+                $prev[$sId] = null;
+                $unvisited[$sId] = true;
+            }
+
+            $dist[$startId] = 0;
+
+            while (!empty($unvisited)) {
+                $minNode = null;
+                $minDist = INF;
+                foreach ($unvisited as $nodeId => $true) {
+                    if ($dist[$nodeId] < $minDist) {
+                        $minDist = $dist[$nodeId];
+                        $minNode = $nodeId;
+                    }
+                }
+
+                if ($minNode === null || $minDist === INF) break;
+                if ($minNode === $targetId) break;
+
+                unset($unvisited[$minNode]);
+
+                if (isset($graph[$minNode])) {
+                    foreach ($graph[$minNode] as $edge) {
+                        $neighbor = $edge['to'];
+                        if (!isset($unvisited[$neighbor])) continue;
+
+                        $alt = $dist[$minNode] + $edge['weight'];
+                        if ($alt < $dist[$neighbor]) {
+                            $dist[$neighbor] = $alt;
+                            $prev[$neighbor] = [
+                                'node' => $minNode,
+                                'edge' => $edge
+                            ];
+                        }
+                    }
+                }
+            }
+
+            if ($dist[$targetId] !== INF && isset($prev[$targetId])) {
+                $curr = $targetId;
+                while (isset($prev[$curr])) {
+                    $p = $prev[$curr];
+                    array_unshift($pathEdges, $p['edge']);
+                    $curr = $p['node'];
+                }
+            }
+        }
+
+        // If no explicit connection edge in DB graph, generate road-snapped direct connection between stops
+        if (empty($pathEdges) && $startId !== $targetId) {
+            $dMeters = $this->haversineDistance([(float)$startStop->latitude, (float)$startStop->longitude], [(float)$endStop->latitude, (float)$endStop->longitude]);
+            $durMins = max(2, (int) round($dMeters / 350));
+            $synConn = new TransitConnection([
+                'id' => 999000 + $startId,
+                'from_stop_id' => $startStop->id,
+                'to_stop_id' => $endStop->id,
+                'mode' => 'jeepney',
+                'route_name' => "{$startStop->name} to {$endStop->name}",
+                'fare' => max(13, round(($dMeters / 1000) * 1.8)),
+                'duration_minutes' => $durMins,
+                'distance_meters' => (int) $dMeters,
+                'is_bidirectional' => true,
+            ]);
+
+            $pathEdges = [[
+                'to' => $endStop->id,
+                'weight' => $durMins,
+                'connection' => $synConn,
+                'direction' => 'forward'
+            ]];
+        }
+
+        $stopsMap = $stops->keyBy('id');
+
+        // Build combined transit corridor geometry from path edges first
+        $transitCorridorPolyline = [];
+        foreach ($pathEdges as $edge) {
+            $conn = $edge['connection'];
+            $dir = $edge['direction'];
+            $fromStop = $dir === 'forward' ? $stopsMap[$conn->from_stop_id] : $stopsMap[$conn->to_stop_id];
+            $toStop = $dir === 'forward' ? $stopsMap[$conn->to_stop_id] : $stopsMap[$conn->from_stop_id];
+
+            $edgeRoadCoords = [];
+            $rawPath = $conn->path_coordinates ?? $conn->polyline_geometry;
+
+            if (!empty($rawPath)) {
+                $geom = is_array($rawPath) ? $rawPath : json_decode($rawPath, true);
+                if (is_array($geom) && count($geom) > 1) {
+                    if ($dir === 'reverse') {
+                        $geom = array_reverse($geom);
+                    }
+                    foreach ($geom as $pt) {
+                        if (isset($pt[0]) && isset($pt[1])) {
+                            $edgeRoadCoords[] = [(float)$pt[0], (float)$pt[1]];
+                        }
+                    }
+                }
+            }
+
+            if (count($edgeRoadCoords) < 2) {
+                $edgeRoadCoords = $this->getRoadGeometryBetweenPoints(
+                    [(float)$fromStop->latitude, (float)$fromStop->longitude],
+                    [(float)$toStop->latitude, (float)$toStop->longitude],
+                    $conn->mode
+                );
+                try { $conn->update(['path_coordinates' => $edgeRoadCoords]); } catch (\Throwable $e) {}
+            }
+
+            foreach ($edgeRoadCoords as $pt) {
+                $transitCorridorPolyline[] = [(float)$pt[0], (float)$pt[1]];
+            }
+        }
+
+        // Build route response structures
+        $flatCoords = [];
+        $transitSegments = [];
+        $routeStops = [];
+        $steps = [];
+        $stepCounter = 1;
+        $totalFare = 0;
+        $totalDuration = 0;
+
+        // Project origin onto highway transit corridor to prevent backtracking to a terminal behind user
+        $nearestStart = $this->findNearestPointOnCorridor([$originLat, $originLng], $transitCorridorPolyline);
+        $boardLat = (float) $nearestStart['point'][0];
+        $boardLng = (float) $nearestStart['point'][1];
+        $boardDistM = (float) $nearestStart['distance_m'];
+        $startIndex = (int) $nearestStart['index'];
+
+        $useRoadsidePickup = ($boardDistM < $minStartDist) || ($boardDistM < 800);
+
+        if ($useRoadsidePickup) {
+            $ingressDistM = $boardDistM;
+            $ingressTargetLat = $boardLat;
+            $ingressTargetLng = $boardLng;
+            $ingressTargetName = "Highway Loading Point";
+        } else {
+            $ingressDistM = $minStartDist;
+            $ingressTargetLat = (float) $startStop->latitude;
+            $ingressTargetLng = (float) $startStop->longitude;
+            $ingressTargetName = $startStop->name;
+        }
+
+        $ingressMins = max(1, (int) round($ingressDistM / 80));
+        $totalDuration += $ingressMins;
+
+        // Ingress Walk / Access geometry: Origin -> Boarding Point
+        $ingressRoadCoords = $this->getRoadGeometryBetweenPoints(
+            [$originLat, $originLng],
+            [$ingressTargetLat, $ingressTargetLng],
+            'walk'
+        );
+        foreach ($ingressRoadCoords as $pt) {
+            $flatCoords[] = [(float)$pt[0], (float)$pt[1]];
+        }
+
+        $routeStops[] = [
+            'id' => 'origin',
+            'name' => $originName,
+            'type' => 'origin',
+            'latitude' => $originLat,
+            'longitude' => $originLng,
+        ];
+        $routeStops[] = [
+            'id' => (string) $startStop->id,
+            'name' => $ingressTargetName,
+            'type' => 'pickup',
+            'latitude' => $ingressTargetLat,
+            'longitude' => $ingressTargetLng,
+            'city' => $startStop->city,
+        ];
+
+        $ingressIsWalk = $ingressDistM < 600;
+        $ingressInstr = $ingressIsWalk
+            ? ($ingressDistM < 80 
+                ? "Walk to nearest roadside loading point (~1 min) and flag down (para) passing transport"
+                : "Walk to nearest roadside loading point along highway (~" . round($ingressDistM) . "m, ~{$ingressMins} mins) and flag down (para) passing transport")
+            : "Ride local tricycle to highway loading area (~" . round($ingressDistM / 1000, 1) . "km, ~{$ingressMins} mins) to flag down passing transport";
+
+        $transitSegments[] = [
+            'id' => 'seg-ingress',
+            'mode' => $ingressIsWalk ? 'walk' : 'tricycle',
+            'title' => $ingressIsWalk ? "Walk to Roadside Loading Point" : "Local Ride to Highway Loading Area",
+            'departureName' => $originName,
+            'arrivalName' => $ingressTargetName,
+            'durationMinutes' => $ingressMins,
+            'costEstimate' => $ingressIsWalk ? 0 : 25,
+            'instructions' => $ingressInstr,
+        ];
+        $steps[] = [
+            'distance' => round($ingressDistM),
+            'duration' => $ingressMins * 60,
+            'name' => "{$stepCounter}. {$ingressInstr}",
+            'maneuver' => ['type' => 'walk', 'modifier' => '', 'location' => [$originLng, $originLat]],
+        ];
+        $stepCounter++;
+
+        // Add transit corridor geometry starting from the boarding point index forward (NO BACKTRACKING!)
+        if ($useRoadsidePickup && $startIndex < count($transitCorridorPolyline)) {
+            for ($i = $startIndex; $i < count($transitCorridorPolyline); $i++) {
+                $flatCoords[] = $transitCorridorPolyline[$i];
+            }
+        } else {
+            foreach ($transitCorridorPolyline as $pt) {
+                $flatCoords[] = $pt;
+            }
+        }
+
+        // Edge Segments (From Stop -> To Stop)
+        foreach ($pathEdges as $idx => $edge) {
+            $conn = $edge['connection'];
+            $dir = $edge['direction'];
+
+            $fromStop = $dir === 'forward' ? $stopsMap[$conn->from_stop_id] : $stopsMap[$conn->to_stop_id];
+            $toStop = $dir === 'forward' ? $stopsMap[$conn->to_stop_id] : $stopsMap[$conn->from_stop_id];
+
+            $durMins = max(1, (int) ($conn->duration_minutes ?? round($conn->distance_meters / 300)));
+            $fare = (float) ($conn->fare ?? 0);
+
+            $totalDuration += $durMins;
+            $totalFare += $fare;
+
+            $routeStops[] = [
+                'id' => (string) $toStop->id,
+                'name' => $toStop->name,
+                'type' => $toStop->type,
+                'latitude' => (float)$toStop->latitude,
+                'longitude' => (float)$toStop->longitude,
+                'city' => $toStop->city,
+            ];
+
+            $modeName = ucfirst($conn->mode);
+            $routeLabel = $conn->route_name ? " ({$conn->route_name})" : "";
+            $instr = "Flag down & Board {$modeName}{$routeLabel} from {$ingressTargetName} to {$toStop->name} (₱" . number_format($fare, 2) . ")";
+
+            $transitSegments[] = [
+                'id' => "seg-{$conn->id}-{$idx}",
+                'mode' => $conn->mode,
+                'route_name' => $conn->route_name,
+                'title' => "{$modeName}{$routeLabel}",
+                'departureName' => $ingressTargetName,
+                'arrivalName' => $toStop->name,
+                'durationMinutes' => $durMins,
+                'costEstimate' => $fare,
+                'instructions' => $instr,
+                'from_stop' => [
+                    'name' => $ingressTargetName,
+                    'lat' => (float) $ingressTargetLat,
+                    'lng' => (float) $ingressTargetLng,
+                ],
+                'to_stop' => [
+                    'name' => $toStop->name,
+                    'lat' => (float) $toStop->latitude,
+                    'lng' => (float) $toStop->longitude,
+                ]
+            ];
+
+            $steps[] = [
+                'distance' => (int) $conn->distance_meters,
+                'duration' => $durMins * 60,
+                'name' => "{$stepCounter}. {$instr}",
+                'maneuver' => ['type' => 'transit', 'modifier' => '', 'location' => [(float)$ingressTargetLng, (float)$ingressTargetLat]],
+            ];
+            $stepCounter++;
+        }
+
+        // Egress Walk / Ride (End Stop -> Destination)
+        $egressDistM = $minEndDist;
+        $egressMins = max(1, (int) round($egressDistM / 80));
+        $totalDuration += $egressMins;
+
+        $egressRoadCoords = $this->getRoadGeometryBetweenPoints(
+            [(float)$endStop->latitude, (float)$endStop->longitude],
+            [$destLat, $destLng],
+            'walk'
+        );
+        foreach ($egressRoadCoords as $pt) {
+            $flatCoords[] = [(float)$pt[0], (float)$pt[1]];
+        }
+
+        $routeStops[] = [
+            'id' => 'destination',
+            'name' => $destName,
+            'type' => 'destination',
+            'latitude' => $destLat,
+            'longitude' => $destLng,
+        ];
+
+        $egressIsWalk = $egressDistM < 500;
+        $egressInstr = $egressIsWalk
+            ? "Alight at {$endStop->name} (para) and walk to {$destName} (~" . round($egressDistM) . "m, ~{$egressMins} mins)"
+            : "Alight at {$endStop->name} (para) and hire local tricycle to {$destName} (~" . round($egressDistM / 1000, 1) . "km, ~{$egressMins} mins)";
+
+        $transitSegments[] = [
+            'id' => 'seg-egress',
+            'mode' => $egressIsWalk ? 'walk' : 'tricycle',
+            'title' => $egressIsWalk ? "Walk to destination" : "Tricycle to destination",
+            'departureName' => $endStop->name,
+            'arrivalName' => $destName,
+            'durationMinutes' => $egressMins,
+            'costEstimate' => $egressIsWalk ? 0 : 20,
+            'instructions' => $egressInstr,
+        ];
+        $steps[] = [
+            'distance' => round($egressDistM),
+            'duration' => $egressMins * 60,
+            'name' => "{$stepCounter}. {$egressInstr}",
+            'maneuver' => ['type' => 'walk', 'modifier' => '', 'location' => [(float)$endStop->longitude, (float)$endStop->latitude]],
+        ];
+        $stepCounter++;
+
+        $steps[] = [
+            'distance' => 0,
+            'duration' => 0,
+            'name' => "{$stepCounter}. Arrive at {$destName}",
+            'maneuver' => ['type' => 'arrive', 'modifier' => '', 'location' => [$destLng, $destLat]],
+        ];
+
+        $totalDistance = 0;
+        for ($i = 0; $i < count($flatCoords) - 1; $i++) {
+            $totalDistance += $this->haversineDistance([$flatCoords[$i][1], $flatCoords[$i][0]], [$flatCoords[$i+1][1], $flatCoords[$i+1][0]]);
+        }
+
+        return [
+            'routes' => [
+                [
+                    'distance' => $totalDistance,
+                    'duration' => $totalDuration,
+                    'is_network_route' => true,
+                    'total_fare' => $totalFare,
+                    'transit_segments' => $transitSegments,
+                    'stops' => $routeStops,
+                    'geometry' => [
+                        'coordinates' => $flatCoords,
+                    ],
+                    'legs' => [
+                        [
+                            'distance' => $totalDistance,
+                            'duration' => $totalDuration,
+                            'steps' => $steps,
+                        ]
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * Helper to fetch road-snapped GeoJSON coordinates between two lat/lng points via OSRM.
+     * Returns array of [lng, lat] coordinate pairs following the actual road network.
+     */
+    protected function getRoadGeometryBetweenPoints(array $from, array $to, string $mode = 'car'): array
+    {
+        $profile = match(strtolower($mode)) {
+            'walk', 'foot' => 'foot',
+            'bicycle', 'bike' => 'cycling',
+            default => 'driving'
+        };
+
+        $url = "{$this->osrmBaseUrl}/route/v1/{$profile}/{$from[1]},{$from[0]};{$to[1]},{$to[0]}";
+
+        try {
+            $response = Http::timeout(4)->get($url, [
+                'overview' => 'full',
+                'geometries' => 'geojson',
+            ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                if (isset($data['routes'][0]['geometry']['coordinates']) && is_array($data['routes'][0]['geometry']['coordinates'])) {
+                    return $data['routes'][0]['geometry']['coordinates'];
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Road geometry fetch failed: " . $e->getMessage());
+        }
+
+        return [[(float)$from[1], (float)$from[0]], [(float)$to[1], (float)$to[0]]];
     }
 }

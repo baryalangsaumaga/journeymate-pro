@@ -4,7 +4,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { Star, Navigation, Share2, MapPin, BookOpen, MessageSquare, Globe, Images, Camera, Loader2, X, Map, Upload, Plus } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,8 +12,10 @@ import { toast } from "@/hooks/use-toast";
 import { useGeolocation, distanceMeters } from "@/hooks/useGeolocation";
 import type { Location } from "@/types/travel";
 import { useReviews } from "@/hooks/useReviews";
-import { placesApi } from "@/lib/api";
+import { placesApi, transitStopsApi } from "@/lib/api";
 import { ScrollArea } from "@/components/ui/scroll-area";
+
+import { calculateDistanceBetween } from "@/lib/routing";
 
 import {
   AlertDialog,
@@ -202,6 +204,14 @@ export function PlaceDetailsSheet({ place, open, onOpenChange, showDirections, o
   }, [place, open]);
 
   const currentPlace = detailedPlace || place;
+  const [nearbyStops, setNearbyStops] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!currentPlace?.lat || !currentPlace?.lng || !open) return;
+    transitStopsApi.getNearbyStops(currentPlace.lat, currentPlace.lng, 5000)
+      .then(res => setNearbyStops(res.data || []))
+      .catch(() => setNearbyStops([]));
+  }, [currentPlace?.lat, currentPlace?.lng, open]);
 
   const { reviews: fetchedReviews, createReview } = useReviews(
     currentPlace ? { placeName: currentPlace.name, placeId: currentPlace.id } : undefined
@@ -396,9 +406,17 @@ export function PlaceDetailsSheet({ place, open, onOpenChange, showDirections, o
               </div>
 
               <div className="absolute bottom-4 left-4 right-4 flex flex-col justify-end">
-                <Badge variant="outline" className="w-max mb-1.5 capitalize text-[10px] bg-background/80 backdrop-blur-md border-primary/20 text-primary">
-                  {currentPlace.type?.replace("-", " ") || "POI"}
-                </Badge>
+                <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                  <Badge variant="outline" className="w-max capitalize text-[10px] bg-background/80 backdrop-blur-md border-primary/20 text-primary">
+                    {currentPlace.type?.replace("-", " ") || "POI"}
+                  </Badge>
+                  {fix && currentPlace?.lat && currentPlace?.lng && (
+                    <Badge variant="outline" className="w-max text-[10px] font-bold bg-primary/10 backdrop-blur-md border-primary/30 text-primary flex items-center gap-1">
+                      <Navigation className="w-3 h-3 text-primary" />
+                      {calculateDistanceBetween([fix.lat, fix.lng], [currentPlace.lat, currentPlace.lng])} away
+                    </Badge>
+                  )}
+                </div>
                 <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">{currentPlace.name}</h2>
                 <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                   <MapPin className="w-3 h-3 flex-shrink-0 text-primary" />
@@ -452,6 +470,57 @@ export function PlaceDetailsSheet({ place, open, onOpenChange, showDirections, o
                   </TabsList>
 
                   <TabsContent value="overview" className="space-y-4 mt-0">
+                    {((currentPlace as any).category === "transit-stop" || (currentPlace as any).modes) && (
+                      <div className="p-3.5 rounded-2xl bg-primary/5 border border-primary/20 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-primary flex items-center gap-1.5 uppercase tracking-wider">
+                            🚌 Transit Stop Details
+                          </span>
+                          <Badge variant={(currentPlace as any).type === "pickup" ? "default" : "destructive"} className="text-[10px] uppercase font-semibold">
+                            {(currentPlace as any).type === "pickup" ? "Pickup Stop" : "Drop-off Stop"}
+                          </Badge>
+                        </div>
+
+                        {/* Allowed Vehicle Modes */}
+                        {Array.isArray((currentPlace as any).modes) && (currentPlace as any).modes.length > 0 && (
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase">Available Transit Modes</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {(currentPlace as any).modes.map((m: string, idx: number) => (
+                                <Badge key={idx} variant="secondary" className="text-xs capitalize font-semibold bg-background border border-border/60">
+                                  {m}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Fare & Duration */}
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-primary/10 text-xs">
+                          <div>
+                            <p className="text-[10px] text-muted-foreground font-medium">Estimated Fare</p>
+                            <p className="font-bold text-foreground">
+                              {(currentPlace as any).fare ? `₱${Number((currentPlace as any).fare).toFixed(2)}` : "Standard Fare"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-muted-foreground font-medium">Trip Leg Duration</p>
+                            <p className="font-bold text-foreground">
+                              {(currentPlace as any).durationMinutes ? `~${(currentPlace as any).durationMinutes} mins` : "Varies"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Instructions */}
+                        {(currentPlace as any).instructions && (
+                          <div className="pt-2 border-t border-primary/10">
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase">Boarding / Alighting Instructions</p>
+                            <p className="text-xs text-foreground/90 font-medium mt-0.5">{(currentPlace as any).instructions}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5">
                         <BookOpen className="w-3.5 h-3.5 text-primary" /> History & Context
@@ -465,6 +534,27 @@ export function PlaceDetailsSheet({ place, open, onOpenChange, showDirections, o
                       <div>
                         <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">About</h4>
                         <p className="text-xs text-muted-foreground leading-relaxed">{currentPlace.description}</p>
+                      </div>
+                    )}
+
+                    {nearbyStops.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-amber-500" /> Nearby TODAs & Transit Terminals ({nearbyStops.length})
+                        </h4>
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                          {nearbyStops.map((stop: any) => (
+                            <div key={stop.id} className="p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/20 flex items-center justify-between">
+                              <div>
+                                <p className="text-xs font-semibold text-foreground">{stop.name}</p>
+                                <p className="text-[10px] text-muted-foreground capitalize">{stop.city || 'Tarlac'} • {stop.type.replace('_', ' ')}</p>
+                              </div>
+                              <Badge variant="outline" className="text-[9px] border-amber-500/30 text-amber-600 bg-amber-500/10">
+                                {Math.round(stop.distance_meters || 0)}m away
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </TabsContent>
@@ -662,6 +752,7 @@ export function PlaceDetailsSheet({ place, open, onOpenChange, showDirections, o
       <Dialog open={selectedPhotoIndex !== null} onOpenChange={(open) => !open && setSelectedPhotoIndex(null)}>
         <DialogContent className="max-w-[95vw] w-full p-0 bg-transparent border-0 shadow-none flex items-center justify-center h-screen max-h-screen [&>button]:hidden">
           <DialogTitle className="sr-only">Photo view</DialogTitle>
+          <DialogDescription className="sr-only">Full screen photo lightbox viewer</DialogDescription>
           {selectedPhotoIndex !== null && gallery[selectedPhotoIndex] && (
             <div className="relative w-full h-full flex flex-col items-center justify-center">
               <Button 

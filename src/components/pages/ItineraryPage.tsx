@@ -756,6 +756,7 @@ export default function ItineraryPage() {
         <DialogContent className="max-w-[340px] rounded-2xl">
           <DialogHeader>
             <DialogTitle className="font-display">Edit Trip</DialogTitle>
+            <DialogDescription>Modify trip title and details</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>

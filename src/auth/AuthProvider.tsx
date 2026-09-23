@@ -22,6 +22,7 @@ export interface AuthUser {
   email: string;
   avatar?: string;
   guest: boolean;
+  is_admin?: boolean;
   provider?: "email" | "google" | "apple";
   stats?: AuthUserStats;
 }
@@ -56,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             email: userData.email,
             avatar: userData.profile_pic,
             guest: false,
+            is_admin: Boolean(userData.is_admin),
             provider: userData.google_id ? 'google' : 'email',
             stats: userData.stats,
           });
@@ -91,6 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: userData.email,
         avatar: userData.profile_pic,
         guest: false,
+        is_admin: Boolean(userData.is_admin),
         provider: 'email',
         stats: userData.stats,
       }, token);
@@ -115,6 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: userData.email,
         avatar: userData.profile_pic,
         guest: false,
+        is_admin: Boolean(userData.is_admin),
         provider: 'email',
         stats: userData.stats,
       }, token);

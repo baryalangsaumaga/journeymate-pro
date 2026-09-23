@@ -14,10 +14,14 @@ interface Props {
   speedLimits?: { name: string; max_speed: number }[];
   steps?: RouteStep[];
   transitSegments?: TransitSegment[];
+  isAdminRoute?: boolean;
+  adminTitle?: string;
   onSelectPlace?: (place: any) => void;
 }
 
-export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps, transitSegments, onSelectPlace }: Props) {
+export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps, transitSegments, isAdminRoute, adminTitle, onSelectPlace }: Props) {
+  if (mode === "transit") return null;
+
   const [open, setOpen] = useState(false);
 
   const { data: fuelStops = [] } = useQuery({
@@ -39,7 +43,7 @@ export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps, trans
       const res = await placesApi.search({ lat: mid[0], lng: mid[1], query: "viewpoint" }).catch(() => ({ data: [] }));
       return res.data || [];
     },
-    enabled: mode !== "transit" && !!routeCoords?.length,
+    enabled: !!routeCoords?.length,
   });
 
   // Use highest speed limit on route, or fallback
@@ -78,13 +82,16 @@ export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps, trans
           onClick={() => setOpen(v => !v)}
           className="w-full flex items-center justify-between p-3 tap-highlight"
         >
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Receipt className="w-4 h-4 text-primary" />
             <span className="text-xs font-semibold">Route Details</span>
+            {isAdminRoute && (
+              <Badge className="bg-emerald-600 text-white font-bold text-[9px] gap-1 border-0">
+                ✨ Admin Verified Route
+              </Badge>
+            )}
             <Badge variant="outline" className="text-[9px] h-5 font-semibold border-primary/20 text-primary">
-              {mode === "transit" 
-                ? (transitSegments?.length ? `${transitSegments.length} transit legs` : "Public Commute") 
-                : mode === "car"
+              {mode === "car"
                 ? `${fuelStops.length} gas · ${viewpoints.length} views`
                 : `${viewpoints.length} views`}
             </Badge>
@@ -142,7 +149,7 @@ export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps, trans
                 )}
 
                 {/* Gas Stops & Scenic Viewpoints */}
-                {mode !== "transit" && ((mode === "car" && fuelStops.length > 0) || viewpoints.length > 0) && (
+                {((mode === "car" && fuelStops.length > 0) || viewpoints.length > 0) && (
                   <div className="grid grid-cols-2 gap-3">
                     {mode === "car" && fuelStops.length > 0 && (
                       <div className={viewpoints.length === 0 ? "col-span-2" : ""}>
@@ -186,71 +193,33 @@ export function RouteDetailsPanel({ routeCoords, mode, speedLimits, steps, trans
                   </div>
                 )}
 
-                {transitSegments && transitSegments.length > 0 && (
+                {steps && steps.length > 0 && (
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
-                      <Bus className="w-3 h-3 text-primary" /> Public Transit Connections
+                      <Route className="w-3 h-3" /> Step-by-Step Directions
                     </p>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {transitSegments.map((seg, idx) => (
-                        <div key={seg.id || idx} className="p-2 rounded-lg bg-primary/5 border border-primary/20 space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-primary">{seg.title || `${seg.type ? seg.type.toUpperCase() : 'TRANSIT'} Leg ${idx + 1}`}</span>
-                            <Badge variant="outline" className="text-[8px] h-4 capitalize">
-                              {(seg.type || "transit").replace("_", " ")}
-                            </Badge>
+                    <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                      {steps.map((s, idx) => {
+                        const StepIcon = s.maneuver === "arrive" ? Flag : 
+                                         s.modifier?.includes("left") ? CornerUpLeft : 
+                                         s.modifier?.includes("right") ? CornerUpRight : ArrowUp;
+                        return (
+                          <div key={idx} className="flex items-start gap-2.5 p-2 rounded-lg bg-muted/50">
+                            <div className="w-6 h-6 rounded-md bg-background flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <StepIcon className="w-3.5 h-3.5 text-primary" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-semibold leading-snug">{s.instruction}</p>
+                              {s.distance > 0 && (
+                                <p className="text-[9px] text-muted-foreground mt-0.5">{formatDistance(s.distance)}</p>
+                              )}
+                            </div>
                           </div>
-                          {seg.instructions && (
-                            <p className="text-[10px] text-muted-foreground leading-snug">{seg.instructions}</p>
-                          )}
-                          <div className="flex items-center gap-3 text-[9px] text-muted-foreground font-medium pt-0.5">
-                            {seg.agency && <span>Agency: {seg.agency}</span>}
-                            {seg.durationMinutes && <span>~{seg.durationMinutes} mins</span>}
-                            {seg.costEstimate && <span>₱{seg.costEstimate}</span>}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
-
-                {(() => {
-                  const filteredSteps = mode === "transit"
-                    ? (steps || []).filter(s => s.maneuver === "transit" || s.maneuver === "arrive" || s.instruction.toLowerCase().includes("board") || s.instruction.toLowerCase().includes("alight") || s.instruction.toLowerCase().includes("transfer") || s.instruction.toLowerCase().includes("walk") || s.instruction.toLowerCase().includes("tricycle"))
-                    : (steps || []);
-
-                  if (filteredSteps.length === 0) return null;
-
-                  return (
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1">
-                        <Route className="w-3 h-3" /> {mode === "transit" ? "Commute Step Instructions" : "Step-by-Step Directions"}
-                      </p>
-                      <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
-                        {filteredSteps.map((s, idx) => {
-                          const StepIcon = s.maneuver === "arrive" ? Flag : 
-                                           s.maneuver === "transit" ? Bus :
-                                           mode === "transit" ? Footprints :
-                                           s.modifier?.includes("left") ? CornerUpLeft : 
-                                           s.modifier?.includes("right") ? CornerUpRight : ArrowUp;
-                          return (
-                            <div key={idx} className="flex items-start gap-2.5 p-2 rounded-lg bg-muted/50">
-                              <div className="w-6 h-6 rounded-md bg-background flex items-center justify-center flex-shrink-0 mt-0.5">
-                                <StepIcon className="w-3.5 h-3.5 text-primary" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-[11px] font-semibold leading-snug">{s.instruction}</p>
-                                {s.distance > 0 && (
-                                  <p className="text-[9px] text-muted-foreground mt-0.5">{formatDistance(s.distance)}</p>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
 
                 {routeCoords && (
                   <p className="text-[9px] text-muted-foreground text-center pt-1">
